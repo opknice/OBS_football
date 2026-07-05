@@ -1003,8 +1003,6 @@
             <div class="row center" style="gap: 10px;">
                 <button id="controlPanelBtn" class="btn-primary" title="Quick setup"><i
                         class="fas fa-sliders"></i></button>
-                <button id="excelMappingBtn" class="btn-secondary" title="Excel Mapping"><i
-                        class="fas fa-table-columns"></i></button>
                 <button id="settingsBtn" class="btn-secondary" data-lang-title="settings"><i
                         class="fas fa-cog"></i></button>
                 <button id="copyBtn" class="btn btn-danger" data-lang-title="copy"><i class="fas fa-copy"></i></button>
@@ -1060,19 +1058,6 @@
         </div>
         <div class="row center" style="margin-top: 15px;">
             <button id="closeControlPanelBtn" class="btn-secondary"><i class="fas fa-times"></i> Close</button>
-        </div>
-    </div>
-
-    <div id="excelMappingPopup" class="popup-modal">
-        <h3><i class="fas fa-table-columns"></i> Excel Mapping</h3>
-        <p>Choose which Excel column should be used for each scoreboard field.</p>
-        <div id="excelMappingStatus" style="color: var(--text-muted-color); font-size: 0.9rem;"></div>
-        <div id="excelMappingFields" class="mapping-list"></div>
-        <div class="row center" style="margin-top: 15px;">
-            <button id="saveExcelMappingBtn" class="btn-primary"><i class="fas fa-save"></i> Save Mapping</button>
-            <button id="resetExcelMappingBtn" class="btn-secondary"><i class="fas fa-rotate-left"></i> Auto
-                Detect</button>
-            <button id="closeExcelMappingBtn" class="btn-secondary"><i class="fas fa-times"></i> Close</button>
         </div>
     </div>
 
@@ -1188,6 +1173,7 @@
 
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/obs-websocket-js@5.0.2/dist/obs-ws.min.js"></script>
 
     <script type="module" src="fcp_v2_assets/main.js"></script>

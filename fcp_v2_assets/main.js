@@ -25,8 +25,7 @@ const elements = [
     "logoPathBtn", "logoPathPopup", "currentLogoPath", "logoPathInput", "editLogoPathBtn", "closeLogoPathBtn",
     "halfpauseBtn", "fullEndBtn", "matchSaveButtons", "hidetimer",
     "controlPanelBtn", "controlPanelPopup", "closeControlPanelBtn", "quickLeague", 
-    "copyLeagueTableUrlBtn", "copyAllScoresUrlBtn", "copyLiveTickerUrlBtn", "excelMappingBtn", "excelMappingPopup",
-    "excelMappingStatus", "excelMappingFields", "saveExcelMappingBtn", "resetExcelMappingBtn", "closeExcelMappingBtn",
+    "copyLeagueTableUrlBtn", "copyAllScoresUrlBtn", "copyLiveTickerUrlBtn",
     "leagueNameDisplay", "teamSelectPopup", "teamSelectTitle", "teamSelectSearch", "teamSelectList", "closeTeamSelectBtn"
 ].reduce((acc, id) => {
     acc[id.replace(/-(\w)/g, (m, p1) => p1.toUpperCase())] = $(id);
@@ -48,21 +47,21 @@ let currentLang = 'th';
 let logoFolderPath = 'C:/OBSAssets/logos';
 let excelMapping = {};
 let matchSaveTargets = [];
+let teamSheetData = []; // Team sheet data for colors
 
-const EXCEL_MAPPING_KEY = 'scoreboardExcelMapping';
 const EXCEL_FIELDS = [
-    { key: 'matchId', label: 'Match ID', required: true, aliases: ['id', 'match', 'matchid', 'match id', 'no', 'no.', 'number', 'ลำดับ', 'ที่', 'แมตช์'] },
-    { key: 'teamA', label: 'Team A', required: true, aliases: ['teama', 'team a', 'home', 'home team', 'team1', 'team 1', 'ทีมa', 'ทีม a', 'ทีมเหย้า'] },
-    { key: 'teamB', label: 'Team B', required: true, aliases: ['teamb', 'team b', 'away', 'away team', 'team2', 'team 2', 'ทีมb', 'ทีม b', 'ทีมเยือน'] },
-    { key: 'logoA', label: 'Logo A', aliases: ['logoa', 'logo a', 'home logo', 'logo1', 'โลโก้a', 'โลโก้ a'] },
-    { key: 'logoB', label: 'Logo B', aliases: ['logob', 'logo b', 'away logo', 'logo2', 'โลโก้b', 'โลโก้ b'] },
-    { key: 'colorA', label: 'Color A', aliases: ['colora', 'color a', 'home color', 'สีa', 'สี a'] },
-    { key: 'colorB', label: 'Color B', aliases: ['colorb', 'color b', 'away color', 'สีb', 'สี b'] },
-    { key: 'colorA2', label: 'Color A 2', aliases: ['colora2', 'color a2', 'color a 2', 'secondary color a', 'สีa2'] },
-    { key: 'colorB2', label: 'Color B 2', aliases: ['colorb2', 'color b2', 'color b 2', 'secondary color b', 'สีb2'] },
-    { key: 'label1', label: 'Label 1', aliases: ['label1', 'label 1', 'round', 'รอบ', 'ป้าย1'] },
-    { key: 'label2', label: 'Label 2', aliases: ['label2', 'label 2', 'week', 'สัปดาห์', 'ป้าย2'] },
-    { key: 'label3', label: 'Label 3', aliases: ['label3', 'label 3', 'field', 'สนาม', 'ป้าย3'] }
+    { key: 'matchId', label: 'Match ID', required: true, aliases: ['match', 'id', 'matchid', 'match id', 'no', 'no.', 'number', 'ลำดับ', 'ที่', 'แมตช์'] },
+    { key: 'teamA', label: 'Team A', required: true, aliases: ['team_a', 'teama', 'team a', 'home', 'home team', 'team1', 'team 1', 'ทีมa', 'ทีม a', 'ทีมเหย้า'] },
+    { key: 'teamB', label: 'Team B', required: true, aliases: ['team_b', 'teamb', 'team b', 'away', 'away team', 'team2', 'team 2', 'ทีมb', 'ทีม b', 'ทีมเยือน'] },
+    { key: 'logoA', label: 'Logo A', aliases: ['team_a', 'logoa', 'logo a', 'home logo', 'logo1', 'โลโก้a', 'โลโก้ a'] },
+    { key: 'logoB', label: 'Logo B', aliases: ['team_b', 'logob', 'logo b', 'away logo', 'logo2', 'โลโก้b', 'โลโก้ b'] },
+    { key: 'colorA', label: 'Color A', aliases: [] },
+    { key: 'colorB', label: 'Color B', aliases: [] },
+    { key: 'colorA2', label: 'Color A 2', aliases: [] },
+    { key: 'colorB2', label: 'Color B 2', aliases: [] },
+    { key: 'label1', label: 'Label 1', aliases: ['label_1', 'label1', 'label 1', 'round', 'รอบ', 'ป้าย1'] },
+    { key: 'label2', label: 'Label 2', aliases: ['label_2', 'label2', 'label 2', 'week', 'สัปดาห์', 'ป้าย2'] },
+    { key: 'label3', label: 'Label 3', aliases: ['label_3', 'label3', 'label 3', 'field', 'สนาม', 'ป้าย3'] }
 ];
 
 const FIREBASE_CONFIG_SHEET_NAME = 'FirebaseRealtimeDatabase';
@@ -80,14 +79,6 @@ const normalizeColumnName = (value) => String(value || '')
 
 const getHeaders = () => sheetData[0] || [];
 
-const loadSavedExcelMapping = () => {
-    try {
-        return JSON.parse(localStorage.getItem(EXCEL_MAPPING_KEY) || '{}');
-    } catch (err) {
-        return {};
-    }
-};
-
 const inferExcelMapping = (headers) => {
     const normalizedHeaders = headers.map(normalizeColumnName);
     return EXCEL_FIELDS.reduce((mapping, field) => {
@@ -101,12 +92,8 @@ const inferExcelMapping = (headers) => {
 const isValidMappedColumn = (headers, columnName) => !columnName || headers.includes(columnName);
 
 const mergeExcelMapping = (headers) => {
-    const inferred = inferExcelMapping(headers);
-    const saved = loadSavedExcelMapping();
-    excelMapping = EXCEL_FIELDS.reduce((mapping, field) => {
-        mapping[field.key] = isValidMappedColumn(headers, saved[field.key]) ? saved[field.key] : inferred[field.key];
-        return mapping;
-    }, {});
+    // Always use auto-detected mapping (ignore saved mapping)
+    excelMapping = inferExcelMapping(headers);
 };
 
 const getMappedValue = (row, fieldKey) => {
@@ -155,6 +142,223 @@ const getMatchDataSheetName = (workbook) => {
     const preferred = workbook.SheetNames.find(sheetName => preferredNames.includes(normalizeColumnName(sheetName)));
     if (preferred) return preferred;
     return workbook.SheetNames.find(sheetName => !isFirebaseConfigSheetName(sheetName)) || workbook.SheetNames[0];
+};
+
+const getTeamSheetName = (workbook) => {
+    const preferredNames = ['team', 'teams'];
+    return workbook.SheetNames.find(sheetName => preferredNames.includes(normalizeColumnName(sheetName)));
+};
+
+const loadTeamSheetWithColors = async (file) => {
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        
+        // Check if ExcelJS is loaded
+        if (typeof ExcelJS === 'undefined') {
+            console.error('ExcelJS library not loaded');
+            return [];
+        }
+        
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(arrayBuffer);
+        
+        console.log('ExcelJS workbook loaded, worksheets:', workbook.worksheets.map(w => w.name));
+        
+        // Find Team sheet
+        const teamSheet = workbook.worksheets.find(sheet => 
+            ['team', 'teams'].includes(normalizeColumnName(sheet.name))
+        );
+        
+        if (!teamSheet) {
+            console.log('No Team sheet found in:', workbook.worksheets.map(w => w.name));
+            return [];
+        }
+        
+        console.log('Found Team sheet:', teamSheet.name);
+        
+        // Excel theme colors mapping (common theme)
+        const themeColors = [
+            '#FFFFFF', // 0: White (background 1)
+            '#000000', // 1: Black (text 1)
+            '#E7E6E6', // 2: Light gray (background 2)
+            '#44546A', // 3: Dark blue (text 2)
+            '#4472C4', // 4: Blue (accent 1)
+            '#ED7D31', // 5: Orange (accent 2)
+            '#A5A5A5', // 6: Gray (accent 3)
+            '#FFC000', // 7: Yellow (accent 4)
+            '#5B9BD5', // 8: Light blue (accent 5)
+            '#70AD47'  // 9: Green (accent 6)
+        ];
+        
+        const teamData = [];
+        let headerRow = null;
+        let teamColIndex = -1;
+        let color1ColIndex = -1;
+        let color2ColIndex = -1;
+        
+        teamSheet.eachRow((row, rowNumber) => {
+            // First row is header
+            if (rowNumber === 1) {
+                headerRow = row;
+                
+                // Find column indices
+                row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                    const headerValue = cell.value ? String(cell.value) : '';
+                    const normalizedHeader = normalizeColumnName(headerValue);
+                    
+                    if (normalizedHeader.includes('team')) {
+                        teamColIndex = colNumber;
+                    } else if (normalizedHeader.includes('color_1') || normalizedHeader.includes('color1')) {
+                        color1ColIndex = colNumber;
+                    } else if (normalizedHeader.includes('color_2') || normalizedHeader.includes('color2')) {
+                        color2ColIndex = colNumber;
+                    }
+                });
+                
+                console.log('Header row:', row.values);
+                console.log('Column indices - Team:', teamColIndex, 'Color1:', color1ColIndex, 'Color2:', color2ColIndex);
+                return;
+            }
+            
+            if (teamColIndex < 0) return; // Can't process without team column
+            
+            const rowData = {
+                rowNumber,
+                team: '',
+                color1: '',
+                color2: ''
+            };
+            
+            // Get team name
+            const teamCell = row.getCell(teamColIndex);
+            rowData.team = teamCell.value ? String(teamCell.value) : '';
+            
+            if (!rowData.team) return; // Skip empty rows
+            
+            // Get Color 1
+            if (color1ColIndex > 0) {
+                const cell = row.getCell(color1ColIndex);
+                rowData.color1 = extractCellColor(cell, themeColors);
+            }
+            
+            // Get Color 2
+            if (color2ColIndex > 0) {
+                const cell = row.getCell(color2ColIndex);
+                rowData.color2 = extractCellColor(cell, themeColors);
+            }
+            
+            console.log('Loaded team:', rowData);
+            teamData.push(rowData);
+        });
+        
+        console.log('Team data loaded with colors:', teamData);
+        return teamData;
+        
+    } catch (err) {
+        console.error('Error loading team colors:', err);
+        return [];
+    }
+};
+
+const extractCellColor = (cell, themeColors) => {
+    if (!cell.fill) return '';
+    
+    const fill = cell.fill;
+    
+    // Pattern fill
+    if (fill.type === 'pattern' && fill.fgColor) {
+        // ARGB color
+        if (fill.fgColor.argb) {
+            const argb = String(fill.fgColor.argb).toUpperCase();
+            if (argb.length === 8) {
+                return '#' + argb.substring(2);
+            } else if (argb.length === 6) {
+                return '#' + argb;
+            }
+        }
+        
+        // Theme color
+        if (typeof fill.fgColor.theme !== 'undefined') {
+            const themeIndex = fill.fgColor.theme;
+            if (themeIndex >= 0 && themeIndex < themeColors.length) {
+                let color = themeColors[themeIndex];
+                
+                // Apply tint if exists
+                if (fill.fgColor.tint) {
+                    color = applyTint(color, fill.fgColor.tint);
+                }
+                
+                return color;
+            }
+        }
+        
+        // Indexed color (legacy)
+        if (typeof fill.fgColor.indexed !== 'undefined') {
+            // Use theme colors as fallback
+            const idx = fill.fgColor.indexed % themeColors.length;
+            return themeColors[idx];
+        }
+    }
+    
+    return '';
+};
+
+const applyTint = (hexColor, tint) => {
+    // Simple tint application (lighter/darker)
+    if (!hexColor || tint === 0) return hexColor;
+    
+    const rgb = hexToRgb(hexColor);
+    if (!rgb) return hexColor;
+    
+    if (tint > 0) {
+        // Lighten
+        rgb.r = Math.round(rgb.r + (255 - rgb.r) * tint);
+        rgb.g = Math.round(rgb.g + (255 - rgb.g) * tint);
+        rgb.b = Math.round(rgb.b + (255 - rgb.b) * tint);
+    } else {
+        // Darken
+        rgb.r = Math.round(rgb.r * (1 + tint));
+        rgb.g = Math.round(rgb.g * (1 + tint));
+        rgb.b = Math.round(rgb.b * (1 + tint));
+    }
+    
+    return rgbToHex(rgb.r, rgb.g, rgb.b);
+};
+
+const hexToRgb = (hex) => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+    } : null;
+};
+
+const rgbToHex = (r, g, b) => {
+    return '#' + [r, g, b].map(x => {
+        const hex = x.toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+    }).join('');
+};
+
+const getTeamColorsFromSheet = (teamName) => {
+    if (!teamSheetData.length || !teamName) return { color1: '', color2: '' };
+    
+    // Find team by name (case-insensitive)
+    const teamRow = teamSheetData.find(row => 
+        normalizeColumnName(row.team) === normalizeColumnName(teamName)
+    );
+    
+    if (!teamRow) {
+        console.log('Team not found in sheet:', teamName);
+        return { color1: '', color2: '' };
+    }
+    
+    console.log('Found team colors:', teamRow);
+    return {
+        color1: teamRow.color1 || '',
+        color2: teamRow.color2 || ''
+    };
 };
 
 const isFirebaseBlockHeader = (value) => {
@@ -846,7 +1050,6 @@ const closeAllPopups = () => {
     elements.changelogPopup.style.display = 'none';
     elements.logoPathPopup.style.display = 'none';
     if (elements.controlPanelPopup) elements.controlPanelPopup.style.display = 'none';
-    if (elements.excelMappingPopup) elements.excelMappingPopup.style.display = 'none';
     if (elements.teamSelectPopup) elements.teamSelectPopup.style.display = 'none';
     elements.timeSettingsError.style.display = 'none';
 };
@@ -959,13 +1162,18 @@ const applyMatch = () => {
     const teamAName = get('teamA') || translations[currentLang].teamA;
     const teamBName = get('teamB') || translations[currentLang].teamB;
 
-    // โหลดสีที่เคยบันทึกไว้ ถ้ามี
+    // Try to get colors from Team sheet first, then fallback to saved or default
+    const teamASheetColors = getTeamColorsFromSheet(teamAName);
+    const teamBSheetColors = getTeamColorsFromSheet(teamBName);
+    
     const savedA = getTeamColors(teamAName);
     const savedB = getTeamColors(teamBName);
-    const colorA1 = savedA.color1 || get('colorA') || '#ffffff';
-    const colorB1 = savedB.color1 || get('colorB') || '#ffffff';
-    const colorA2 = savedA.color2 || get('colorA2') || '#000000';
-    const colorB2 = savedB.color2 || get('colorB2') || '#000000';
+    
+    // Priority: Team Sheet > Saved > Default
+    const colorA1 = teamASheetColors.color1 || savedA.color1 || '#ffffff';
+    const colorB1 = teamBSheetColors.color1 || savedB.color1 || '#ffffff';
+    const colorA2 = teamASheetColors.color2 || savedA.color2 || '#000000';
+    const colorB2 = teamBSheetColors.color2 || savedB.color2 || '#000000';
 
     currentLogoA = get('logoA');
     currentLogoB = get('logoB');
@@ -1259,82 +1467,6 @@ const changeInjuryTime = (delta) => {
     updateInjuryTimeDisplay();
 };
 
-const buildExcelMappingControls = () => {
-    if (!elements.excelMappingFields) return;
-    const headers = getHeaders();
-    elements.excelMappingFields.innerHTML = '';
-    elements.excelMappingStatus.textContent = headers.length
-        ? `Detected ${headers.length} columns. Required fields: Match ID, Team A, Team B.`
-        : 'Please import an Excel file first.';
-
-    EXCEL_FIELDS.forEach(field => {
-        const row = document.createElement('div');
-        row.className = 'field-row';
-
-        const label = document.createElement('label');
-        label.htmlFor = `excel-map-${field.key}`;
-        label.textContent = `${field.label}${field.required ? ' *' : ''}`;
-
-        const select = document.createElement('select');
-        select.id = `excel-map-${field.key}`;
-        select.dataset.field = field.key;
-
-        const emptyOption = document.createElement('option');
-        emptyOption.value = '';
-        emptyOption.textContent = field.required ? 'Select column' : 'Not used';
-        select.appendChild(emptyOption);
-
-        headers.forEach(header => {
-            const option = document.createElement('option');
-            option.value = header;
-            option.textContent = header;
-            select.appendChild(option);
-        });
-
-        select.value = excelMapping[field.key] || '';
-        row.append(label, select);
-        elements.excelMappingFields.appendChild(row);
-    });
-};
-
-const openExcelMappingPopup = () => {
-    if (!sheetData.length) {
-        showToast(translations[currentLang].toastLoadFileFirst, 'error');
-        return;
-    }
-    mergeExcelMapping(getHeaders());
-    buildExcelMappingControls();
-    openPopup(elements.excelMappingPopup);
-};
-
-const saveExcelMapping = () => {
-    const nextMapping = {};
-    elements.excelMappingFields.querySelectorAll('select[data-field]').forEach(select => {
-        nextMapping[select.dataset.field] = select.value;
-    });
-
-    const missingRequired = EXCEL_FIELDS
-        .filter(field => field.required && !nextMapping[field.key])
-        .map(field => field.label);
-
-    if (missingRequired.length) {
-        showToast(`Missing required mapping: ${missingRequired.join(', ')}`, 'error');
-        return;
-    }
-
-    excelMapping = nextMapping;
-    localStorage.setItem(EXCEL_MAPPING_KEY, JSON.stringify(excelMapping));
-    closeAllPopups();
-    showToast('Excel mapping saved', 'success');
-};
-
-const resetExcelMapping = () => {
-    excelMapping = inferExcelMapping(getHeaders());
-    localStorage.setItem(EXCEL_MAPPING_KEY, JSON.stringify(excelMapping));
-    buildExcelMappingControls();
-    showToast('Auto mapping applied', 'info');
-};
-
 const encodeUrlSafeBase64 = (value) => btoa(value)
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
@@ -1438,57 +1570,65 @@ const handleExcel = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.xlsx, .xls';
-    input.onchange = e => {
+    input.onchange = async e => {
         const file = e.target.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = event => {
-            try {
-                const data = new Uint8Array(event.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const sheetName = getMatchDataSheetName(workbook);
-                sheetData = getSheetRows(workbook, sheetName);
-                mergeExcelMapping(getHeaders());
-                matchSaveTargets = parseFirebaseSaveTargets(workbook);
+        
+        try {
+            // Use XLSX for main data
+            const reader = new FileReader();
+            reader.onload = async event => {
+                try {
+                    const data = new Uint8Array(event.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheetName = getMatchDataSheetName(workbook);
+                    sheetData = getSheetRows(workbook, sheetName);
+                    mergeExcelMapping(getHeaders());
+                    
+                    matchSaveTargets = parseFirebaseSaveTargets(workbook);
 
-                // Get league name from Excel Firebase target or fallback to Excel file name
-                console.log('Match Save Targets:', matchSaveTargets);
-                
-                let leagueName;
-                if (matchSaveTargets.length > 0) {
-                    // ถ้ามีหลายลีก ให้เอาชื่อทั้งหมดมาต่อกัน
-                    if (matchSaveTargets.length === 1) {
-                        leagueName = matchSaveTargets[0].name;
+                    // Get league name from Excel Firebase target or fallback to Excel file name
+                    console.log('Match Save Targets:', matchSaveTargets);
+                    
+                    let leagueName;
+                    if (matchSaveTargets.length > 0) {
+                        if (matchSaveTargets.length === 1) {
+                            leagueName = matchSaveTargets[0].name;
+                        } else {
+                            leagueName = `${matchSaveTargets[0].name} (+${matchSaveTargets.length - 1} more)`;
+                        }
+                        console.log('Selected league name:', leagueName);
                     } else {
-                        // ใช้ชื่อลีกแรก + จำนวนลีกทั้งหมด
-                        leagueName = `${matchSaveTargets[0].name} (+${matchSaveTargets.length - 1} more)`;
+                        leagueName = file.name.replace(/\.[^/.]+$/, "");
                     }
-                    console.log('Selected league name:', leagueName);
-                } else {
-                    // fallback เป็นชื่อไฟล์ Excel
-                    leagueName = file.name.replace(/\.[^/.]+$/, "");
-                }
-                
-                if (elements.leagueNameDisplay) {
-                    elements.leagueNameDisplay.textContent = leagueName;
-                }
-                document.title = `${leagueName} - Scoreboard Controller`;
+                    
+                    if (elements.leagueNameDisplay) {
+                        elements.leagueNameDisplay.textContent = leagueName;
+                    }
+                    document.title = `${leagueName} - Scoreboard Controller`;
 
-                renderMatchSaveButtons(matchSaveTargets.length ? undefined : 'ไม่พบ Firebase config ใน Excel');
-                populateQuickSetup(localStorage.getItem('quickOverlayLeague'));
-                
-                // Auto load/apply the match matching current ID (usually 1)
-                applyMatch();
-
-                const saveTargetMessage = matchSaveTargets.length
-                    ? `สร้างปุ่มบันทึก ${matchSaveTargets.length} ลีกแล้ว`
-                    : `ไม่พบชีต ${FIREBASE_CONFIG_SHEET_NAME}`;
-                showToast(`${translations[currentLang].toastSuccess} - Excel mapping is ready - ${saveTargetMessage}`, matchSaveTargets.length ? 'success' : 'info');
-            } catch (err) {
-                showToast(err.message, 'error');
-            }
-        };
-        reader.readAsArrayBuffer(file);
+                    renderMatchSaveButtons(matchSaveTargets.length ? undefined : 'ไม่พบ Firebase config ใน Excel');
+                    populateQuickSetup(localStorage.getItem('quickOverlayLeague'));
+                    
+                    const saveTargetMessage = matchSaveTargets.length
+                        ? `สร้างปุ่มบันทึก ${matchSaveTargets.length} ลีกแล้ว`
+                        : `ไม่พบชีต ${FIREBASE_CONFIG_SHEET_NAME}`;
+                    showToast(`${translations[currentLang].toastSuccess} - Excel mapping is ready - ${saveTargetMessage}`, matchSaveTargets.length ? 'success' : 'info');
+                } catch (err) {
+                    showToast(err.message, 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+            
+            // Use ExcelJS for Team sheet colors (runs in parallel)
+            teamSheetData = await loadTeamSheetWithColors(file);
+            
+            // Auto load/apply the match after Team sheet is loaded
+            setTimeout(() => applyMatch(), 100);
+            
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
     };
     input.click();
 };
@@ -1758,7 +1898,6 @@ const setupEventListeners = () => {
     elements.donateBtn.addEventListener('click', () => openPopup(elements.donatePopup));
     elements.changelogBtn.addEventListener('click', () => openPopup(elements.changelogPopup));
     elements.controlPanelBtn.addEventListener('click', openControlPanelPopup);
-    elements.excelMappingBtn.addEventListener('click', openExcelMappingPopup);
     elements.popupOverlay.addEventListener('click', closeAllPopups);
 
     // Details Popup
@@ -1772,9 +1911,6 @@ const setupEventListeners = () => {
     elements.closeTimeSettingsBtn.addEventListener('click', closeAllPopups);
     elements.closeLogoPathBtn.addEventListener('click', closeAllPopups);
     elements.closeControlPanelBtn.addEventListener('click', closeAllPopups);
-    elements.closeExcelMappingBtn.addEventListener('click', closeAllPopups);
-    elements.saveExcelMappingBtn.addEventListener('click', saveExcelMapping);
-    elements.resetExcelMappingBtn.addEventListener('click', resetExcelMapping);
     
     // Control Panel - Copy URL Buttons
     elements.copyLeagueTableUrlBtn.addEventListener('click', copyLeagueTableUrl);
