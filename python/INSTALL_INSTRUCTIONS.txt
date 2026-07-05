@@ -1,0 +1,51 @@
+========================================
+IMPORTANT: OBS Python Compatibility Issue
+========================================
+
+PROBLEM:
+You installed Python 3.14.6, but OBS Studio only supports Python 3.6 - 3.12
+
+SOLUTION:
+Install Python 3.12.8 instead
+
+========================================
+STEPS:
+========================================
+
+1. Right-click on this file and select "Run as administrator":
+   python\install_python_312_for_obs.cmd
+
+2. Wait for installation to complete (about 30 seconds)
+
+3. Restart OBS Studio completely:
+   - Close OBS
+   - Check Task Manager (Ctrl+Shift+Esc) to make sure obs64.exe is not running
+   - Open OBS again
+
+4. Configure Python in OBS:
+   - Tools > Scripts > Python Settings
+   - Set "Python Install Path" to: C:\Python312
+   - You should see "Python 3.12.8 64bit" instead of "Python not currently loaded"
+
+5. Load the hotkey script:
+   - Go to "Scripts" tab
+   - Click "+" button
+   - Select: python\scoreboard_hotkeys.py
+   - Configure host/port/password to match your OBS WebSocket settings
+
+6. Set up hotkeys:
+   - Settings > Hotkeys
+   - Find "Scoreboard: ..." entries
+   - Assign keyboard shortcuts
+
+========================================
+TROUBLESHOOTING:
+========================================
+
+If it still shows "Python not currently loaded":
+- Make sure you ran install_python_312_for_obs.cmd as Administrator
+- Check that C:\Python312 folder exists
+- Try using backslash: C:\Python312 (not C:/Python312)
+- Restart your computer
+
+========================================

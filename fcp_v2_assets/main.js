@@ -24,9 +24,10 @@ const elements = [
     "timeSettingsError", "changelogBtn", "changelogPopup", "closeChangelogBtn",
     "logoPathBtn", "logoPathPopup", "currentLogoPath", "logoPathInput", "editLogoPathBtn", "closeLogoPathBtn",
     "halfpauseBtn", "fullEndBtn", "matchSaveButtons", "hidetimer",
-    "controlPanelBtn", "controlPanelPopup", "closeControlPanelBtn", "quickLeague", "quickFirebaseDatabaseUrl", "quickOverlayView",
-    "quickOverlayDate", "generatedOverlayUrl", "copyOverlayUrlBtn", "excelMappingBtn", "excelMappingPopup",
-    "excelMappingStatus", "excelMappingFields", "saveExcelMappingBtn", "resetExcelMappingBtn", "closeExcelMappingBtn"
+    "controlPanelBtn", "controlPanelPopup", "closeControlPanelBtn", "quickLeague", 
+    "copyLeagueTableUrlBtn", "copyAllScoresUrlBtn", "copyLiveTickerUrlBtn", "excelMappingBtn", "excelMappingPopup",
+    "excelMappingStatus", "excelMappingFields", "saveExcelMappingBtn", "resetExcelMappingBtn", "closeExcelMappingBtn",
+    "leagueNameDisplay"
 ].reduce((acc, id) => {
     acc[id.replace(/-(\w)/g, (m, p1) => p1.toUpperCase())] = $(id);
     return acc;
@@ -66,8 +67,8 @@ const FIREBASE_CONFIG_SHEET_NAME = 'FirebaseRealtimeDatabase';
 const FIREBASE_CONFIG_KEYS = ['apiKey', 'authDomain', 'databaseURL', 'projectId', 'storageBucket', 'messagingSenderId', 'appId', 'measurementId'];
 const FIREBASE_REQUIRED_CONFIG_KEYS = ['apiKey', 'authDomain', 'databaseURL', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
 const FIREBASE_META_KEYS = {
-    name: ['name', 'league', 'leaguename', 'buttonlabel', 'savelabel', 'ชื่อลีก', 'ชื่อปุ่ม'],
-    id: ['id', 'leagueid', 'slug', 'รหัสลีก']
+    name: ['name', 'league', 'leaguename', 'buttonlabel', 'savelabel', 'ชื่อลีก', 'ชื่อปุ่ม', 'ชื่อลีกleaguename', 'leaguenameชื่อลีก'],
+    id: ['id', 'leagueid', 'slug', 'รหัสลีก', 'รหัสลีกleagueid', 'leagueidรหัสลีก']
 };
 
 const normalizeColumnName = (value) => String(value || '')
@@ -155,8 +156,10 @@ const getMatchDataSheetName = (workbook) => {
 };
 
 const isFirebaseBlockHeader = (value) => {
-    const text = cleanExcelText(value).toLowerCase();
-    return text.includes('firebase') && text.includes('config');
+    const text = cleanExcelText(value);
+    if (text.startsWith('//') || text.startsWith('#')) return false;
+    const lower = text.toLowerCase();
+    return lower.includes('firebase') && lower.includes('config');
 };
 
 const isExampleFirebaseBlock = (value) => /(exam|example|sample|ตัวอย่าง)/i.test(cleanExcelText(value));
@@ -284,6 +287,50 @@ const getOrCreateFirebaseApp = (target) => {
 
 // --- OBS ---
 const obs = new OBSWebSocket();
+
+// --- Hotkey bridge จาก OBS Hotkeys ผ่าน BroadcastCustomEvent ---
+const HOTKEY_ACTION_TO_BUTTON = {
+    play1: 'play1Btn',
+    halfpause: 'halfpauseBtn',
+    play2: 'play2Btn',
+    fullend: 'fullEndBtn',
+    swap: 'swapBtn',
+    scoreAplus: 'scoreAPlusBtn',
+    scoreAminus: 'scoreAMinusBtn',
+    scoreBplus: 'scoreBPlusBtn',
+    scoreBminus: 'scoreBMinusBtn',
+    hidetimer: 'hidetimer',
+    injuryplus: 'injuryTimePlusBtn',
+    injuryminus: 'injuryTimeMinusBtn',
+};
+
+// ลงทะเบียน event listener สำหรับ CustomEvent
+obs.on('CustomEvent', (eventData) => {
+    console.log('[Hotkey Bridge] Raw event received:', eventData);
+    
+    // obs-websocket v5 ส่งมาเป็น { eventData: { ... } }
+    const data = eventData.eventData || eventData;
+    console.log('[Hotkey Bridge] Extracted data:', data);
+    
+    const action = data.action;
+    console.log('[Hotkey Bridge] Action:', action);
+    
+    const btnId = HOTKEY_ACTION_TO_BUTTON[action];
+    console.log('[Hotkey Bridge] Button ID:', btnId);
+    
+    if (btnId) {
+        const btn = document.getElementById(btnId);
+        console.log('[Hotkey Bridge] Button element:', btn);
+        if (btn) {
+            console.log('[Hotkey Bridge] Clicking button:', btnId);
+            btn.click();
+        } else {
+            console.error('[Hotkey Bridge] Button not found:', btnId);
+        }
+    } else {
+        console.warn('[Hotkey Bridge] Unknown action:', action, 'from data:', data);
+    }
+});
 const setText = (source, text) => obs.call('SetInputSettings', { inputName: source, inputSettings: { text: String(text) } }).catch(err => {});
 const setImage = (sourceName, filename) => {
     if (!filename) {
@@ -873,47 +920,46 @@ const populateQuickSetup = (preferredLeagueValue = elements.quickLeague?.value) 
     updateQuickFirebasePreview(getSelectedQuickLeague());
 };
 
-const updateGeneratedOverlayUrl = () => {
-    if (!elements.generatedOverlayUrl) return;
+const buildOverlayUrl = (view = 'table', date = 'all') => {
     const selectedLeague = getSelectedQuickLeague();
     const url = new URL('overlay.html', window.location.href);
     url.searchParams.set('league', selectedLeague?.id || 'var');
-    url.searchParams.set('view', elements.quickOverlayView.value || 'table');
+    url.searchParams.set('view', view);
 
     if (selectedLeague?.source === 'excel') {
         url.searchParams.set('title', selectedLeague.name);
         url.searchParams.set('fb', encodeFirebaseConfigParam(selectedLeague.firebaseConfig));
     }
 
-    const date = elements.quickOverlayDate.value.trim();
     if (date && date !== 'all') url.searchParams.set('date', date);
-    updateQuickFirebasePreview(selectedLeague);
-    elements.generatedOverlayUrl.value = url.href;
+    return url.href;
 };
 
 const openControlPanelPopup = () => {
     const savedLeague = localStorage.getItem('quickOverlayLeague');
-    const savedView = localStorage.getItem('quickOverlayView');
-    const savedDate = localStorage.getItem('quickOverlayDate');
     populateQuickSetup(savedLeague);
-    if (savedView) elements.quickOverlayView.value = savedView;
-    if (savedDate) elements.quickOverlayDate.value = savedDate;
-    updateGeneratedOverlayUrl();
     openPopup(elements.controlPanelPopup);
 };
 
-const saveQuickSetupState = () => {
-    localStorage.setItem('quickOverlayLeague', elements.quickLeague.value);
-    localStorage.setItem('quickOverlayView', elements.quickOverlayView.value);
-    localStorage.setItem('quickOverlayDate', elements.quickOverlayDate.value.trim() || 'all');
-    updateGeneratedOverlayUrl();
+const copyLeagueTableUrl = () => {
+    const url = buildOverlayUrl('table', 'all');
+    navigator.clipboard.writeText(url)
+        .then(() => showToast(translations[currentLang].toastCopied || 'Copied!', 'info'))
+        .catch(() => showToast(translations[currentLang].toastCopyFailed || 'Copy failed!', 'error'));
 };
 
-const copyGeneratedOverlayUrl = () => {
-    saveQuickSetupState();
-    navigator.clipboard.writeText(elements.generatedOverlayUrl.value)
-        .then(() => showToast(translations[currentLang].toastCopied, 'info'))
-        .catch(() => showToast(translations[currentLang].toastCopyFailed, 'error'));
+const copyAllScoresUrl = () => {
+    const url = buildOverlayUrl('results', 'all');
+    navigator.clipboard.writeText(url)
+        .then(() => showToast(translations[currentLang].toastCopied || 'Copied!', 'info'))
+        .catch(() => showToast(translations[currentLang].toastCopyFailed || 'Copy failed!', 'error'));
+};
+
+const copyLiveTickerUrl = () => {
+    const url = buildOverlayUrl('ticker', 'today');
+    navigator.clipboard.writeText(url)
+        .then(() => showToast(translations[currentLang].toastCopied || 'Copied!', 'info'))
+        .catch(() => showToast(translations[currentLang].toastCopyFailed || 'Copy failed!', 'error'));
 };
 
 const handleExcel = () => {
@@ -932,9 +978,19 @@ const handleExcel = () => {
                 sheetData = getSheetRows(workbook, sheetName);
                 mergeExcelMapping(getHeaders());
                 matchSaveTargets = parseFirebaseSaveTargets(workbook);
+
+                // Get league name from Excel Firebase target or fallback to Excel file name
+                const leagueName = matchSaveTargets.length ? matchSaveTargets[0].name : file.name.replace(/\.[^/.]+$/, "");
+                if (elements.leagueNameDisplay) {
+                    elements.leagueNameDisplay.textContent = leagueName;
+                }
+                document.title = `${leagueName} - Scoreboard Controller`;
+
                 renderMatchSaveButtons(matchSaveTargets.length ? undefined : 'ไม่พบ Firebase config ใน Excel');
                 populateQuickSetup(localStorage.getItem('quickOverlayLeague'));
-                updateGeneratedOverlayUrl();
+                
+                // Auto load/apply the match matching current ID (usually 1)
+                applyMatch();
 
                 const saveTargetMessage = matchSaveTargets.length
                     ? `สร้างปุ่มบันทึก ${matchSaveTargets.length} ลีกแล้ว`
@@ -1109,11 +1165,11 @@ const setupEventListeners = () => {
     elements.closeExcelMappingBtn.addEventListener('click', closeAllPopups);
     elements.saveExcelMappingBtn.addEventListener('click', saveExcelMapping);
     elements.resetExcelMappingBtn.addEventListener('click', resetExcelMapping);
-    elements.copyOverlayUrlBtn.addEventListener('click', copyGeneratedOverlayUrl);
-    [elements.quickLeague, elements.quickOverlayView, elements.quickOverlayDate].forEach(control => {
-        control.addEventListener('input', saveQuickSetupState);
-        control.addEventListener('change', saveQuickSetupState);
-    });
+    
+    // Control Panel - Copy URL Buttons
+    elements.copyLeagueTableUrlBtn.addEventListener('click', copyLeagueTableUrl);
+    elements.copyAllScoresUrlBtn.addEventListener('click', copyAllScoresUrl);
+    elements.copyLiveTickerUrlBtn.addEventListener('click', copyLiveTickerUrl);
     
     // Time Settings
     elements.saveTimeSettingsBtn.addEventListener('click', saveTimeSettings);
