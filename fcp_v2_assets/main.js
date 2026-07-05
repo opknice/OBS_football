@@ -362,6 +362,8 @@ const parseFirebaseSaveTargetsMultilineFormat = (rows) => {
         if (line.includes('League Name') && line.includes('"')) {
             // แยก League Name ออกมา: League Name "VAR SuperLeague 38+"
             const match = line.match(/["']([^"']+)["']/);
+            console.log('League Name line:', line);
+            console.log('Regex match:', match);
             if (match) {
                 // ถ้ามี config block ก่อนหน้า ให้ประมวลผลก่อน
                 if (currentLeague && currentConfigLines.length > 0) {
@@ -1184,7 +1186,7 @@ const renderMatchSaveButtons = (emptyMessage = 'โหลด Excel เพื่�
         button.type = 'button';
         button.id = `match-save-${target.id}`;
         button.className = 'btn btn-primary';
-        button.title = target.firebaseConfig.databaseURL || target.name;
+        button.title = `${target.name}\n${target.firebaseConfig.databaseURL || ''}`;
         button.append(`บันทึกข้อมูลแมทต์ ${target.name}`);
         icon.className = 'fas fa-save';
         button.appendChild(icon);
@@ -1450,7 +1452,23 @@ const handleExcel = () => {
                 matchSaveTargets = parseFirebaseSaveTargets(workbook);
 
                 // Get league name from Excel Firebase target or fallback to Excel file name
-                const leagueName = matchSaveTargets.length ? matchSaveTargets[0].name : file.name.replace(/\.[^/.]+$/, "");
+                console.log('Match Save Targets:', matchSaveTargets);
+                
+                let leagueName;
+                if (matchSaveTargets.length > 0) {
+                    // ถ้ามีหลายลีก ให้เอาชื่อทั้งหมดมาต่อกัน
+                    if (matchSaveTargets.length === 1) {
+                        leagueName = matchSaveTargets[0].name;
+                    } else {
+                        // ใช้ชื่อลีกแรก + จำนวนลีกทั้งหมด
+                        leagueName = `${matchSaveTargets[0].name} (+${matchSaveTargets.length - 1} more)`;
+                    }
+                    console.log('Selected league name:', leagueName);
+                } else {
+                    // fallback เป็นชื่อไฟล์ Excel
+                    leagueName = file.name.replace(/\.[^/.]+$/, "");
+                }
+                
                 if (elements.leagueNameDisplay) {
                     elements.leagueNameDisplay.textContent = leagueName;
                 }
