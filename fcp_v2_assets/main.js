@@ -27,11 +27,13 @@ const elements = [
     "controlPanelBtn", "controlPanelPopup", "closeControlPanelBtn", "quickLeague", 
     "copyLeagueTableUrlBtn", "copyAllScoresUrlBtn", "copyLiveTickerUrlBtn", "excelMappingBtn", "excelMappingPopup",
     "excelMappingStatus", "excelMappingFields", "saveExcelMappingBtn", "resetExcelMappingBtn", "closeExcelMappingBtn",
-    "leagueNameDisplay"
+    "leagueNameDisplay", "teamSelectPopup", "teamSelectTitle", "teamSelectSearch", "teamSelectList", "closeTeamSelectBtn"
 ].reduce((acc, id) => {
     acc[id.replace(/-(\w)/g, (m, p1) => p1.toUpperCase())] = $(id);
     return acc;
 }, {});
+
+let teamSelectTarget = null;
 
 
 // --- STATE VARIABLES ---
@@ -217,11 +219,478 @@ const buildFirebaseSaveTarget = (block, index) => {
     };
 };
 
+const parseFirebaseConfigFromJSON = (jsonString) => {
+    // ลองแปลง JSON string ให้เป็น object ก่อน
+    try {
+        const cleaned = jsonString.trim();
+        if (cleaned.startsWith('{')) {
+            const config = JSON.parse(cleaned);
+            return config;
+        }
+    } catch (e) {
+        // ไม่ใช่ JSON ถูกต้อง ให้ลองแยกจาก inline format
+    }
+    
+    // แยกจาก inline format: apiKey: "xxx", authDomain: "yyy", ...
+    const configObj = {};
+    
+    // แยกด้วย comma ที่ไม่อยู่ใน quotes
+    const parts = [];
+    let current = '';
+    let inQuotes = false;
+    let quoteChar = '';
+    
+    for (let i = 0; i < jsonString.length; i++) {
+        const char = jsonString[i];
+        
+        if ((char === '"' || char === "'" || char === '`') && (i === 0 || jsonString[i-1] !== '\\')) {
+            if (!inQuotes) {
+                inQuotes = true;
+                quoteChar = char;
+            } else if (char === quoteChar) {
+                inQuotes = false;
+                quoteChar = '';
+            }
+            current += char;
+        } else if (char === ',' && !inQuotes) {
+            if (current.trim()) {
+                parts.push(current.trim());
+            }
+            current = '';
+        } else {
+            current += char;
+        }
+    }
+    if (current.trim()) {
+        parts.push(current.trim());
+    }
+    
+    // แยกแต่ละ part เป็น key: value
+    parts.forEach(part => {
+        const colonIndex = part.indexOf(':');
+        if (colonIndex < 0) return;
+        
+        const key = part.substring(0, colonIndex).trim();
+        let value = part.substring(colonIndex + 1).trim();
+        
+        // ลบ quotes ออก
+        if ((value.startsWith('"') && value.endsWith('"')) ||
+            (value.startsWith("'") && value.endsWith("'")) ||
+            (value.startsWith('`') && value.endsWith('`'))) {
+            value = value.substring(1, value.length - 1);
+        }
+        
+        // หา normalized key ที่ตรงกับ FIREBASE_CONFIG_KEYS
+        const normalizedKey = FIREBASE_CONFIG_KEYS.find(k => 
+            normalizeMetaKey(k) === normalizeMetaKey(key)
+        );
+        
+        if (normalizedKey && value) {
+            configObj[normalizedKey] = value;
+        }
+    });
+    
+    return Object.keys(configObj).length ? configObj : null;
+};
+
 const parseFirebaseSaveTargets = (workbook) => {
     const sheetName = workbook.SheetNames.find(isFirebaseConfigSheetName);
     if (!sheetName) return [];
 
     const rows = getSheetRows(workbook, sheetName);
+    if (!rows.length) return [];
+
+    // ตรวจสอบรูปแบบของ Excel
+    const firstRow = rows[0];
+    const firstCell = cleanExcelText(firstRow[0]);
+    const secondCell = cleanExcelText(firstRow[1]);
+    
+    // ตรวจสอบว่าเป็นรูปแบบ "แต่ละ row เป็น 1 บรรทัดของ JavaScript code"
+    const isMultilineFormat = (
+        firstCell.includes('League Name') && 
+        !secondCell && 
+        rows.length > 3 &&
+        rows.some(r => cleanExcelText(r[0]).includes('const') || cleanExcelText(r[0]).includes('firebaseConfig'))
+    );
+    
+    if (isMultilineFormat) {
+        // รูปแบบ: แต่ละ row เป็น 1 บรรทัด ต้องรวม rows เข้าด้วยกัน
+        return parseFirebaseSaveTargetsMultilineFormat(rows);
+    }
+    
+    // ตรวจสอบว่า row แรกเป็น header หรือเป็นข้อมูลเลย
+    const firstCellNormalized = normalizeMetaKey(firstCell);
+    const isHeaderRow = (
+        firstCellNormalized === 'leaguename' ||
+        firstCellNormalized === 'name' ||
+        firstCellNormalized === 'league' ||
+        (firstCellNormalized.includes('league') && firstCellNormalized.includes('name'))
+    );
+    
+    const secondCellHasData = secondCell.includes('const') || 
+                              secondCell.includes('firebase') || 
+                              secondCell.includes('{') ||
+                              secondCell.includes('apiKey');
+    
+    if (isHeaderRow && !secondCellHasData) {
+        return parseFirebaseSaveTargetsNewFormat(rows);
+    } else if (secondCellHasData) {
+        return parseFirebaseSaveTargetsNewFormatNoHeader(rows);
+    } else {
+        return parseFirebaseSaveTargetsOldFormat(rows);
+    }
+};
+
+const parseFirebaseSaveTargetsMultilineFormat = (rows) => {
+    console.log('=== Parsing Firebase Config (Multiline Format) ===');
+    console.log('Total rows:', rows.length);
+    
+    const targets = [];
+    let currentLeague = null;
+    let currentConfigLines = [];
+    let inConfigBlock = false;
+    
+    for (let i = 0; i < rows.length; i++) {
+        const line = cleanExcelText(rows[i][0]);
+        
+        // ข้าม row ว่างและ comments
+        if (!line || line.startsWith('//') || line.startsWith('#')) {
+            continue;
+        }
+        
+        // ตรวจจับ League Name
+        if (line.includes('League Name') && line.includes('"')) {
+            // แยก League Name ออกมา: League Name "VAR SuperLeague 38+"
+            const match = line.match(/["']([^"']+)["']/);
+            if (match) {
+                // ถ้ามี config block ก่อนหน้า ให้ประมวลผลก่อน
+                if (currentLeague && currentConfigLines.length > 0) {
+                    const config = parseFirebaseConfigFromMultiline(currentConfigLines);
+                    if (config) {
+                        const missingKeys = FIREBASE_REQUIRED_CONFIG_KEYS.filter(key => !config[key]);
+                        if (missingKeys.length === 0) {
+                            targets.push({
+                                id: makeSaveTargetId(currentLeague, `firebase-${targets.length + 1}`),
+                                index: targets.length,
+                                name: currentLeague,
+                                firebaseConfig: config
+                            });
+                            console.log('✓ Added target:', currentLeague);
+                        } else {
+                            console.log('⚠️ Skipped:', currentLeague, '- Missing keys:', missingKeys);
+                        }
+                    }
+                }
+                
+                // เริ่ม league ใหม่
+                currentLeague = match[1];
+                currentConfigLines = [];
+                inConfigBlock = false;
+                console.log('\nFound league:', currentLeague);
+            }
+            continue;
+        }
+        
+        // ตรวจจับจุดเริ่มต้น config block
+        if (line.includes('const') && line.includes('firebaseConfig')) {
+            inConfigBlock = true;
+            currentConfigLines = [line];
+            continue;
+        }
+        
+        // รวบรวมบรรทัดของ config
+        if (inConfigBlock) {
+            currentConfigLines.push(line);
+            
+            // ตรวจจับจุดสิ้นสุด config block
+            if (line.includes('};') || (line.includes('}') && line.includes(';'))) {
+                inConfigBlock = false;
+            }
+        }
+    }
+    
+    // ประมวลผล config block สุดท้าย
+    if (currentLeague && currentConfigLines.length > 0) {
+        const config = parseFirebaseConfigFromMultiline(currentConfigLines);
+        if (config) {
+            const missingKeys = FIREBASE_REQUIRED_CONFIG_KEYS.filter(key => !config[key]);
+            if (missingKeys.length === 0) {
+                targets.push({
+                    id: makeSaveTargetId(currentLeague, `firebase-${targets.length + 1}`),
+                    index: targets.length,
+                    name: currentLeague,
+                    firebaseConfig: config
+                });
+                console.log('✓ Added target:', currentLeague);
+            } else {
+                console.log('⚠️ Skipped:', currentLeague, '- Missing keys:', missingKeys);
+            }
+        }
+    }
+    
+    console.log(`\n=== Total targets found: ${targets.length} ===\n`);
+    return targets;
+};
+
+const parseFirebaseConfigFromMultiline = (lines) => {
+    // รวมทุกบรรทัดเข้าด้วยกัน
+    const fullText = lines.join('\n');
+    
+    // ใช้ฟังก์ชันที่มีอยู่แล้ว
+    return parseFirebaseConfigFromJavaScript(fullText);
+};
+
+const parseFirebaseSaveTargetsNewFormatNoHeader = (rows) => {
+    const targets = [];
+    
+    console.log('=== Parsing Firebase Config (No Header Format) ===');
+    
+    // วนลูปทุก row (ไม่มี header ดังนั้นเริ่มจาก 0)
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const leagueName = cleanExcelText(row[0]);
+        const configText = cleanExcelText(row[1]);
+        
+        console.log(`\n--- Processing Row ${i + 1} ---`);
+        console.log('League Name:', leagueName);
+        console.log('Config Text (first 150 chars):', configText.substring(0, 150));
+        
+        if (!leagueName || !configText) {
+            console.log('⚠️ Skipped: Empty league name or config');
+            continue;
+        }
+        
+        const config = parseFirebaseConfigFromJavaScript(configText);
+        console.log('Parsed config keys:', config ? Object.keys(config) : 'null');
+        
+        if (!config) {
+            console.log('⚠️ Skipped: Could not parse Firebase config');
+            continue;
+        }
+        
+        // ตรวจสอบว่ามี required fields ครบหรือไม่
+        const missingKeys = FIREBASE_REQUIRED_CONFIG_KEYS.filter(key => !config[key]);
+        const hasAllRequired = missingKeys.length === 0;
+        
+        if (!hasAllRequired) {
+            console.log('⚠️ Skipped: Missing required keys:', missingKeys);
+            continue;
+        }
+        
+        const id = makeSaveTargetId(leagueName, `firebase-${i + 1}`);
+        targets.push({
+            id,
+            index: i,
+            name: leagueName,
+            firebaseConfig: config
+        });
+        
+        console.log('✓ Added target:', id);
+    }
+    
+    console.log(`\n=== Total targets found: ${targets.length} ===\n`);
+    return targets;
+};
+
+const parseFirebaseConfigFromJavaScript = (jsCode) => {
+    // รูปแบบใน Excel: const firebaseConfig = { apiKey: "xxx", ... };
+    
+    // ลบ const, firebaseConfig, = ออก
+    let cleaned = jsCode
+        .replace(/const\s+/gi, '')
+        .replace(/firebaseConfig\s*=/gi, '')
+        .replace(/var\s+/gi, '')
+        .replace(/let\s+/gi, '')
+        .trim();
+    
+    // ลบ semicolon ตัวสุดท้าย
+    if (cleaned.endsWith(';')) {
+        cleaned = cleaned.substring(0, cleaned.length - 1).trim();
+    }
+    
+    // ตอนนี้ควรเหลือแค่ { ... }
+    // ลองแปลงเป็น JSON ก่อน
+    try {
+        // แปลง JavaScript object notation เป็น JSON
+        // แทนที่ key ที่ไม่มี quotes ด้วย key ที่มี quotes
+        const jsonString = cleaned.replace(/(\w+):/g, '"$1":');
+        const config = JSON.parse(jsonString);
+        return config;
+    } catch (e) {
+        console.log('JSON parse failed, trying manual extraction');
+    }
+    
+    // ถ้า JSON.parse ไม่ได้ ให้แยกด้วยมือ
+    // หา { และ }
+    const startBrace = cleaned.indexOf('{');
+    const endBrace = cleaned.lastIndexOf('}');
+    
+    if (startBrace < 0 || endBrace < 0) {
+        console.log('No braces found in config text');
+        return null;
+    }
+    
+    const innerContent = cleaned.substring(startBrace + 1, endBrace);
+    
+    const configObj = {};
+    const parts = [];
+    let current = '';
+    let inQuotes = false;
+    let quoteChar = '';
+    let depth = 0;
+    
+    // แยกด้วย comma แต่ไม่แยกถ้าอยู่ใน quotes หรือ nested braces
+    for (let i = 0; i < innerContent.length; i++) {
+        const char = innerContent[i];
+        
+        if ((char === '"' || char === "'" || char === '`') && (i === 0 || innerContent[i-1] !== '\\')) {
+            if (!inQuotes) {
+                inQuotes = true;
+                quoteChar = char;
+            } else if (char === quoteChar) {
+                inQuotes = false;
+                quoteChar = '';
+            }
+            current += char;
+        } else if ((char === '{' || char === '[') && !inQuotes) {
+            depth++;
+            current += char;
+        } else if ((char === '}' || char === ']') && !inQuotes) {
+            depth--;
+            current += char;
+        } else if (char === ',' && !inQuotes && depth === 0) {
+            if (current.trim()) {
+                parts.push(current.trim());
+            }
+            current = '';
+        } else {
+            current += char;
+        }
+    }
+    if (current.trim()) {
+        parts.push(current.trim());
+    }
+    
+    // แยกแต่ละ part เป็น key: value
+    parts.forEach(part => {
+        const colonIndex = part.indexOf(':');
+        if (colonIndex < 0) return;
+        
+        let key = part.substring(0, colonIndex).trim();
+        let value = part.substring(colonIndex + 1).trim();
+        
+        // ลบ quotes ออกจาก key
+        if ((key.startsWith('"') && key.endsWith('"')) ||
+            (key.startsWith("'") && key.endsWith("'"))) {
+            key = key.substring(1, key.length - 1);
+        }
+        
+        // ลบ quotes ออกจาก value
+        if ((value.startsWith('"') && value.endsWith('"')) ||
+            (value.startsWith("'") && value.endsWith("'")) ||
+            (value.startsWith('`') && value.endsWith('`'))) {
+            value = value.substring(1, value.length - 1);
+        }
+        
+        // ลบ comma ตัวสุดท้าย (ถ้ามี)
+        if (value.endsWith(',')) {
+            value = value.substring(0, value.length - 1).trim();
+        }
+        
+        // หา normalized key ที่ตรงกับ FIREBASE_CONFIG_KEYS
+        const normalizedKey = FIREBASE_CONFIG_KEYS.find(k => 
+            normalizeMetaKey(k) === normalizeMetaKey(key)
+        );
+        
+        if (normalizedKey && value) {
+            configObj[normalizedKey] = value;
+        }
+    });
+    
+    return Object.keys(configObj).length ? configObj : null;
+};
+
+const parseFirebaseSaveTargetsNewFormat = (rows) => {
+    const headers = rows[0].map(cell => cleanExcelText(cell));
+    
+    // หา index ของ League Name และ Firebase config columns
+    let nameColIndex = -1;
+    let configColIndex = -1;
+    
+    headers.forEach((header, index) => {
+        const normalized = normalizeMetaKey(header);
+        // เพิ่มการตรวจสอบ "league" และ "name" แยกกัน
+        if (normalized.includes('league') && normalized.includes('name')) {
+            nameColIndex = index;
+        } else if (normalized.includes('leaguename') || normalized === 'name' || normalized === 'league') {
+            if (nameColIndex < 0) nameColIndex = index;
+        }
+        
+        // เพิ่มการตรวจสอบ "firebase" และ "config" แยกกัน
+        if (normalized.includes('firebase') && normalized.includes('config')) {
+            configColIndex = index;
+        } else if (normalized.includes('firebaseconfig') || normalized === 'firebase' || normalized === 'config') {
+            if (configColIndex < 0) configColIndex = index;
+        }
+    });
+
+    if (nameColIndex < 0 || configColIndex < 0) {
+        console.warn('ไม่พบคอลัมน์ League Name หรือ Firebase config');
+        console.warn('Headers found:', headers);
+        console.warn('Normalized:', headers.map(h => normalizeMetaKey(h)));
+        return [];
+    }
+
+    const targets = [];
+    
+    // วนลูป data rows (เริ่มจาก index 1)
+    for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const leagueName = cleanExcelText(row[nameColIndex]);
+        const configText = cleanExcelText(row[configColIndex]);
+        
+        console.log(`\n--- Processing Row ${i} ---`);
+        console.log('League Name:', leagueName);
+        console.log('Config Text (first 100 chars):', configText.substring(0, 100));
+        
+        if (!leagueName || !configText) {
+            console.log('⚠️ Skipped: Empty league name or config');
+            continue;
+        }
+        
+        const config = parseFirebaseConfigFromJSON(configText);
+        console.log('Parsed config keys:', config ? Object.keys(config) : 'null');
+        
+        if (!config) {
+            console.log('⚠️ Skipped: Could not parse Firebase config');
+            continue;
+        }
+        
+        // ตรวจสอบว่ามี required fields ครบหรือไม่
+        const missingKeys = FIREBASE_REQUIRED_CONFIG_KEYS.filter(key => !config[key]);
+        const hasAllRequired = missingKeys.length === 0;
+        
+        if (!hasAllRequired) {
+            console.log('⚠️ Skipped: Missing required keys:', missingKeys);
+            continue;
+        }
+        
+        const id = makeSaveTargetId(leagueName, `firebase-${i}`);
+        targets.push({
+            id,
+            index: i - 1,
+            name: leagueName,
+            firebaseConfig: config
+        });
+        
+        console.log('✓ Added target:', id);
+    }
+    
+    console.log(`\n=== Total targets found: ${targets.length} ===\n`);
+    return targets;
+};
+
+const parseFirebaseSaveTargetsOldFormat = (rows) => {
     const blocks = [];
     let current = null;
 
@@ -376,6 +845,7 @@ const closeAllPopups = () => {
     elements.logoPathPopup.style.display = 'none';
     if (elements.controlPanelPopup) elements.controlPanelPopup.style.display = 'none';
     if (elements.excelMappingPopup) elements.excelMappingPopup.style.display = 'none';
+    if (elements.teamSelectPopup) elements.teamSelectPopup.style.display = 'none';
     elements.timeSettingsError.style.display = 'none';
 };
 
@@ -1048,6 +1518,128 @@ const copyDetails = () => {
 };
 
 
+const getSheetValue = (row, header, fieldKey) => {
+    const columnName = excelMapping[fieldKey];
+    if (!columnName) return '';
+    const index = header.indexOf(columnName);
+    return index >= 0 ? (row[index] ?? '') : '';
+};
+
+const getTeamsFromExcel = () => {
+    if (!sheetData.length) return [];
+    const header = sheetData[0].map(cell => String(cell || '').trim());
+    const teams = new Map();
+
+    const addTeam = (row, side) => {
+        const name = String(getSheetValue(row, header, `team${side}`)).trim();
+        if (!name) return;
+
+        const key = name.toLocaleLowerCase();
+        const current = teams.get(key) || { name, logo: '', color1: '', color2: '' };
+        
+        const logo = String(getSheetValue(row, header, `logo${side}`)).trim();
+        const color1 = String(getSheetValue(row, header, `color${side}`)).trim();
+        const color2 = String(getSheetValue(row, header, `color${side}2`)).trim();
+
+        teams.set(key, {
+            name: current.name,
+            logo: current.logo || logo,
+            color1: current.color1 || color1,
+            color2: current.color2 || color2
+        });
+    };
+
+    sheetData.slice(1).forEach(row => {
+        addTeam(row, 'A');
+        addTeam(row, 'B');
+    });
+
+    return Array.from(teams.values()).sort((a, b) => a.name.localeCompare(b.name, 'th'));
+};
+
+const renderTeamSelectList = () => {
+    const query = elements.teamSelectSearch.value.trim().toLocaleLowerCase();
+    const teams = getTeamsFromExcel().filter(team => team.name.toLocaleLowerCase().includes(query));
+    
+    elements.teamSelectList.innerHTML = '';
+
+    if (!teams.length) {
+        const empty = document.createElement('div');
+        empty.className = 'team-select-empty';
+        empty.textContent = query ? 'ไม่พบทีมที่ค้นหา' : 'ไม่พบรายชื่อทีมในไฟล์ Excel';
+        elements.teamSelectList.appendChild(empty);
+        return;
+    }
+
+    teams.forEach(teamInfo => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'team-select-item';
+
+        const logo = document.createElement('span');
+        logo.className = 'team-select-logo';
+        logo.textContent = getTeamInitials(teamInfo.name);
+
+        if (teamInfo.logo) {
+            const hasExt = /\.(png|jpe?g|gif|webp)$/i.test(teamInfo.logo);
+            const img = document.createElement('img');
+            img.src = `file:///${logoFolderPath}/${teamInfo.logo}${hasExt ? '' : '.png'}`;
+            img.onerror = () => { img.style.display = 'none'; };
+            img.onload = () => { logo.textContent = ''; };
+            logo.appendChild(img);
+        }
+
+        const name = document.createElement('span');
+        name.className = 'team-select-name';
+        name.textContent = teamInfo.name;
+
+        btn.append(logo, name);
+        btn.addEventListener('click', () => applyTeamSelection(teamSelectTarget, teamInfo));
+        elements.teamSelectList.appendChild(btn);
+    });
+};
+
+const applyTeamSelection = (target, teamInfo) => {
+    const previousLogo = target === 'A' ? currentLogoA : currentLogoB;
+    const logoFile = teamInfo.logo || previousLogo;
+
+    if (target === 'A') {
+        currentLogoA = logoFile;
+    } else {
+        currentLogoB = logoFile;
+    }
+
+    updateTeamUI(
+        target,
+        teamInfo.name,
+        logoFile,
+        teamInfo.color1 || '#ffffff',
+        teamInfo.color2 || '#000000'
+    );
+
+    closeAllPopups();
+    showToast(`เลือกทีม ${teamInfo.name} แล้ว`, 'success');
+};
+
+const openTeamSelector = (target) => {
+    if (!elements.teamSelectPopup) {
+        enterEditMode(target);
+        return;
+    }
+
+    if (!sheetData.length) {
+        showToast(translations[currentLang].toastLoadFileFirst, 'error');
+        return;
+    }
+
+    teamSelectTarget = target;
+    elements.teamSelectTitle.textContent = target === 'A' ? 'เลือกทีม A' : 'เลือกทีม B';
+    elements.teamSelectSearch.value = '';
+    renderTeamSelectList();
+    openPopup(elements.teamSelectPopup);
+    setTimeout(() => elements.teamSelectSearch.focus(), 0);
+};
+
 const enterEditMode = (team) => {
     const isA = team === 'A';
     const nameDiv = isA ? elements.nameA : elements.nameB;
@@ -1176,10 +1768,18 @@ const setupEventListeners = () => {
     elements.saveAndUpdateTimeBtn.addEventListener('click', saveAndUpdateTime);
 
     // Edit Name
-    elements.editBtnA.addEventListener('click', () => enterEditMode('A'));
+    elements.editBtnA.addEventListener('click', () => openTeamSelector('A'));
     elements.okBtnA.addEventListener('click', () => exitEditMode('A', true));
-    elements.editBtnB.addEventListener('click', () => enterEditMode('B'));
+    elements.editBtnB.addEventListener('click', () => openTeamSelector('B'));
     elements.okBtnB.addEventListener('click', () => exitEditMode('B', true));
+
+    // Team Select Popup
+    if (elements.teamSelectSearch) {
+        elements.teamSelectSearch.addEventListener('input', renderTeamSelectList);
+    }
+    if (elements.closeTeamSelectBtn) {
+        elements.closeTeamSelectBtn.addEventListener('click', closeAllPopups);
+    }
     
     // Colors
     elements.colorA.addEventListener('input', (e) => {
