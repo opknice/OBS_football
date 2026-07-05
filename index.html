@@ -973,25 +973,12 @@
 
 
                 <div class="timer-right-controls">
-                    <div class="row" id="injuryTimeContainer">
-                        <span id="injuryTimeDisplay" style="font-size: 1.1rem; font-weight: bold;">+0</span>
-                        <button id="injuryTimeMinusBtn" class="btn-secondary"
-                            style="padding: 2px 8px; font-size: 1rem; line-height: 1;">◄</button>
-                        <button id="injuryTimePlusBtn" class="btn-secondary"
-                            style="padding: 2px 8px; font-size: 1rem; line-height: 1;">►</button>
+                    <div class="row">
+                        <button id="adjustTimeBtn" class="btn btn-secondary" style="width: 100%; margin-bottom: 5px;">
+                            <i class="fas fa-clock"></i> ปรับเวลา
+                        </button>
                     </div>
                     <div class="row">
-                        <button id="resetToStartBtn" class="btn-secondary" data-lang-title="resetToStartHint"><i
-                                class="fas fa-history"></i></button>
-                        <button id="editTimeBtn" class="btn-secondary"><i class="fas fa-edit"></i></button>
-                    </div>
-                    <div class="row">
-                        <label class="countdown-toggle" data-lang-title="countdownHint"
-                            style="display: flex; justify-content: center; width: 100%;">
-                            <input type="checkbox" id="countdownCheck">
-                            <span data-lang="countdown"></span>
-                        </label>
-
                         <button id="linktohtml" class="btn btn-primary"
                             onclick="(function(){var w=600,h=400,left=(screen.width-w)/2,top=(screen.height-h)/2; window.open('Penalty-Shootout.html','penalty','width='+w+',height='+h+',left='+Math.max(0,Math.round(left))+',top='+Math.max(0,Math.round(top))+',toolbar=no,menubar=no,location=no,status=no,resizable=yes,scrollbars=yes');})()">ยิงจุดโทษ<i
                                 class=""></i></button>
@@ -1054,6 +1041,9 @@
             </button>
             <button id="copyLiveTickerUrlBtn" class="btn-warning" style="padding: 12px;">
                 <i class="fas fa-tv"></i> Copy Live Ticker URL (date=today)
+            </button>
+            <button id="manageDatabaseBtn" class="btn-warning" style="padding: 12px; background: #8b5cf6;">
+                <i class="fas fa-database"></i> Manage Database
             </button>
         </div>
         <div class="row center" style="margin-top: 15px;">
@@ -1168,6 +1158,114 @@
         <div id="teamSelectList" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;"></div>
         <div class="row center" style="margin-top: 15px;">
             <button id="closeTeamSelectBtn" class="btn-secondary"><i class="fas fa-times"></i> <span data-lang="close"></span></button>
+        </div>
+    </div>
+
+    <div id="manageDatabasePopup" class="popup-modal" style="max-width: 900px;">
+        <h3><i class="fas fa-database"></i> Manage Database</h3>
+        <div class="row" style="margin-bottom: 10px; gap: 10px;">
+            <button id="refreshDatabaseBtn" class="btn-primary"><i class="fas fa-sync"></i> Refresh</button>
+            <input type="text" id="databaseSearchInput" placeholder="ค้นหา..." style="flex: 1; padding: 8px;">
+            <select id="databaseFilterDate" style="padding: 8px;">
+                <option value="all">ทั้งหมด</option>
+                <option value="today">วันนี้</option>
+                <option value="week">สัปดาห์นี้</option>
+                <option value="month">เดือนนี้</option>
+            </select>
+        </div>
+        <div id="databaseLoadingStatus" style="text-align: center; padding: 20px; display: none;">
+            <i class="fas fa-spinner fa-spin" style="font-size: 2rem;"></i>
+            <p>กำลังโหลดข้อมูล...</p>
+        </div>
+        <div id="databaseTableContainer" style="max-height: 500px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px;">
+            <table id="databaseTable" style="width: 100%; border-collapse: collapse;">
+                <thead style="position: sticky; top: 0; background: var(--card-bg-color); z-index: 1;">
+                    <tr>
+                        <th style="padding: 10px; border-bottom: 2px solid var(--border-color); text-align: left;">วันที่</th>
+                        <th style="padding: 10px; border-bottom: 2px solid var(--border-color); text-align: left;">ทีม A</th>
+                        <th style="padding: 10px; border-bottom: 2px solid var(--border-color); text-align: center;">คะแนน</th>
+                        <th style="padding: 10px; border-bottom: 2px solid var(--border-color); text-align: left;">ทีม B</th>
+                        <th style="padding: 10px; border-bottom: 2px solid var(--border-color); text-align: center;">รอบ</th>
+                        <th style="padding: 10px; border-bottom: 2px solid var(--border-color); text-align: center;">จัดการ</th>
+                    </tr>
+                </thead>
+                <tbody id="databaseTableBody">
+                    <tr>
+                        <td colspan="6" style="padding: 30px; text-align: center; color: var(--text-muted-color);">
+                            กรุณาเลือก League และกด Refresh
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="row center" style="margin-top: 15px;">
+            <button id="closeDatabasePopupBtn" class="btn-secondary"><i class="fas fa-times"></i> Close</button>
+        </div>
+    </div>
+
+    <div id="editMatchPopup" class="popup-modal" style="max-width: 500px;">
+        <h3><i class="fas fa-edit"></i> แก้ไขผลการแข่งขัน</h3>
+        <div class="settings-grid">
+            <div class="field-row">
+                <label>วันที่:</label>
+                <input type="date" id="editMatchDate" style="width: 100%;">
+            </div>
+            <div class="field-row">
+                <label>ทีม A:</label>
+                <input type="text" id="editMatchTeamA" style="width: 100%;">
+            </div>
+            <div class="field-row">
+                <label>คะแนน A:</label>
+                <input type="number" id="editMatchScoreA" min="0" style="width: 100%;">
+            </div>
+            <div class="field-row">
+                <label>ทีม B:</label>
+                <input type="text" id="editMatchTeamB" style="width: 100%;">
+            </div>
+            <div class="field-row">
+                <label>คะแนน B:</label>
+                <input type="number" id="editMatchScoreB" min="0" style="width: 100%;">
+            </div>
+            <div class="field-row">
+                <label>รอบการแข่งขัน:</label>
+                <input type="text" id="editMatchRound" style="width: 100%;">
+            </div>
+            <div class="field-row">
+                <label>URL:</label>
+                <input type="text" id="editMatchUrl" style="width: 100%;">
+            </div>
+        </div>
+        <div class="row center" style="margin-top: 20px; gap: 10px;">
+            <button id="saveMatchEditBtn" class="btn-success"><i class="fas fa-save"></i> บันทึก</button>
+            <button id="cancelMatchEditBtn" class="btn-secondary"><i class="fas fa-times"></i> ยกเลิก</button>
+        </div>
+    </div>
+
+    <div id="presetTimePopup" class="popup-modal" style="max-width: 400px;">
+        <h3><i class="fas fa-clock"></i> เลือกเวลาเริ่มต้น</h3>
+        <p>เลือกเวลาที่ต้องการใช้เป็นค่าเริ่มต้นสำหรับการนับเวลา</p>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+            <button class="preset-time-btn btn-primary" data-seconds="0" style="padding: 15px;">
+                <i class="fas fa-clock"></i> 0 นาที
+            </button>
+            <button class="preset-time-btn btn-primary" data-seconds="720" style="padding: 15px;">
+                <i class="fas fa-clock"></i> 12 นาที
+            </button>
+            <button class="preset-time-btn btn-primary" data-seconds="900" style="padding: 15px;">
+                <i class="fas fa-clock"></i> 15 นาที
+            </button>
+            <button class="preset-time-btn btn-primary" data-seconds="1200" style="padding: 15px;">
+                <i class="fas fa-clock"></i> 20 นาที
+            </button>
+            <button class="preset-time-btn btn-primary" data-seconds="1500" style="padding: 15px;">
+                <i class="fas fa-clock"></i> 25 นาที
+            </button>
+            <button class="preset-time-btn btn-primary" data-seconds="2700" style="padding: 15px;">
+                <i class="fas fa-clock"></i> 45 นาที
+            </button>
+        </div>
+        <div class="row center" style="margin-top: 20px;">
+            <button id="closePresetTimeBtn" class="btn-secondary"><i class="fas fa-times"></i> ปิด</button>
         </div>
     </div>
 

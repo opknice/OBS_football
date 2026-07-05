@@ -5,7 +5,7 @@ import { translations } from './languages.js';
 import { getLeagueOptions } from './league-config.js';
 // 1. นำเข้าโมดูล (สำหรับ Firebase v9+)
 import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-import { getDatabase, ref, push } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+import { getDatabase, ref, push, onValue, remove, update } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
 
 // --- DOM ELEMENTS ---
 const $ = id => document.getElementById(id);
@@ -13,26 +13,34 @@ const elements = [
     "nameA", "nameB", "label1", "label2", "label3", "logoA", "logoB", "initialsA", "initialsB",
     "scoreA", "scoreB", "timerText", "halfText", "announcement-text", "matchID", 
     "colorA", "colorB", "colorA2", "colorB2",
-    "countdownCheck", "languageSelector", "nameA-input", "nameB-input", "excelBtn", "loadBtn",
+    "languageSelector", "nameA-input", "nameB-input", "excelBtn", "loadBtn",
     "editBtnA", "okBtnA", "editBtnB", "okBtnB", "swapBtn", "scoreAPlusBtn", "scoreAMinusBtn",
     "scoreBPlusBtn", "scoreBMinusBtn", "resetScoreBtn", "halfBtn", "play1Btn", "play2Btn", "pauseBtn",
-    "resetToStartBtn", "editTimeBtn", "settingsBtn", "copyBtn", "helpBtn", "donateBtn",
+    "settingsBtn", "copyBtn", "helpBtn", "donateBtn",
     "toast-container", "popupOverlay", "detailsPopup", "helpPopup", "donatePopup", "detailsText",
-    "saveDetailsBtn", "closeDetailsBtn", "closeHelpBtn", "closeDonateBtn", "injuryTimeDisplay",
-    "injuryTimePlusBtn", "injuryTimeMinusBtn", "resetToZeroBtn", "timeSettingsPopup",
+    "saveDetailsBtn", "closeDetailsBtn", "closeHelpBtn", "closeDonateBtn",
+    "timeSettingsPopup",
     "startTimeMinutes", "startTimeSeconds", "saveTimeSettingsBtn", "saveAndUpdateTimeBtn", "closeTimeSettingsBtn",
     "timeSettingsError", "changelogBtn", "changelogPopup", "closeChangelogBtn",
     "logoPathBtn", "logoPathPopup", "currentLogoPath", "logoPathInput", "editLogoPathBtn", "closeLogoPathBtn",
     "halfpauseBtn", "fullEndBtn", "matchSaveButtons", "hidetimer",
     "controlPanelBtn", "controlPanelPopup", "closeControlPanelBtn", "quickLeague", 
     "copyLeagueTableUrlBtn", "copyAllScoresUrlBtn", "copyLiveTickerUrlBtn",
-    "leagueNameDisplay", "teamSelectPopup", "teamSelectTitle", "teamSelectSearch", "teamSelectList", "closeTeamSelectBtn"
+    "leagueNameDisplay", "teamSelectPopup", "teamSelectTitle", "teamSelectSearch", "teamSelectList", "closeTeamSelectBtn",
+    "manageDatabaseBtn", "manageDatabasePopup", "closeDatabasePopupBtn", "refreshDatabaseBtn",
+    "databaseSearchInput", "databaseFilterDate", "databaseTableBody", "databaseLoadingStatus",
+    "editMatchPopup", "editMatchDate", "editMatchTeamA", "editMatchScoreA", 
+    "editMatchTeamB", "editMatchScoreB", "editMatchRound", "editMatchUrl",
+    "saveMatchEditBtn", "cancelMatchEditBtn",
+    "adjustTimeBtn", "presetTimePopup", "closePresetTimeBtn"
 ].reduce((acc, id) => {
     acc[id.replace(/-(\w)/g, (m, p1) => p1.toUpperCase())] = $(id);
     return acc;
 }, {});
 
 let teamSelectTarget = null;
+let currentDatabaseMatches = [];
+let currentEditingMatch = null;
 
 
 // --- STATE VARIABLES ---
@@ -40,14 +48,12 @@ let sheetData = [];
 let currentLogoA = '', currentLogoB = '';
 let scoreA = 0, scoreB = 0;
 let timer = 0, interval = null, half = '1st';
-let injuryTime = 0;
-let isCountdown = false;
-let countdownStartTime = 2700; // 45 minutes default
 let currentLang = 'th';
 let logoFolderPath = 'C:/OBSAssets/logos';
 let excelMapping = {};
 let matchSaveTargets = [];
 let teamSheetData = []; // Team sheet data for colors
+let countdownStartTime = 0; // Default start time in seconds
 
 const EXCEL_FIELDS = [
     { key: 'matchId', label: 'Match ID', required: true, aliases: ['match', 'id', 'matchid', 'match id', 'no', 'no.', 'number', 'ลำดับ', 'ที่', 'แมตช์'] },
@@ -974,9 +980,7 @@ const HOTKEY_ACTION_TO_BUTTON = {
     scoreAminus: 'scoreAMinusBtn',
     scoreBplus: 'scoreBPlusBtn',
     scoreBminus: 'scoreBMinusBtn',
-    hidetimer: 'hidetimer',
-    injuryplus: 'injuryTimePlusBtn',
-    injuryminus: 'injuryTimeMinusBtn',
+    hidetimer: 'hidetimer'
 };
 
 // ลงทะเบียน event listener สำหรับ CustomEvent
@@ -1051,6 +1055,9 @@ const closeAllPopups = () => {
     elements.logoPathPopup.style.display = 'none';
     if (elements.controlPanelPopup) elements.controlPanelPopup.style.display = 'none';
     if (elements.teamSelectPopup) elements.teamSelectPopup.style.display = 'none';
+    if (elements.manageDatabasePopup) elements.manageDatabasePopup.style.display = 'none';
+    if (elements.editMatchPopup) elements.editMatchPopup.style.display = 'none';
+    if (elements.presetTimePopup) elements.presetTimePopup.style.display = 'none';
     elements.timeSettingsError.style.display = 'none';
 };
 
@@ -1274,15 +1281,10 @@ const startTimer1 = () => {
     half = '1st';
     elements.halfText.textContent = half;
     setText('half_text', half);
-    timer = 0;
+    timer = 0; // Always start at 0:00 for first half
     if (interval) return;
     interval = setInterval(() => {
-        if (isCountdown) {
-            if (timer > 0) timer--;
-            else stopTimer();
-        } else {
-            timer++;
-        }
+        timer++;
         updateTimerDisplay();
     }, 1000);
 };
@@ -1291,15 +1293,10 @@ const startTimer2 = () => {
     half = '2nd';
     elements.halfText.textContent = half;
     setText('half_text', half);
-    timer = 900;
+    timer = countdownStartTime; // Start at preset time for second half
     if (interval) return;
     interval = setInterval(() => {
-        if (isCountdown) {
-            if (timer > 0) timer--;
-            else stopTimer();
-        } else {
-            timer++;
-        }
+        timer++;
         updateTimerDisplay();
     }, 1000);
 };
@@ -1330,18 +1327,14 @@ const fulltime = () => {
 
 const resetToStartTime = () => {
     stopTimer();
-    timer = countdownStartTime; 
-    injuryTime = 0;
+    timer = 0; 
     updateTimerDisplay();
-    updateInjuryTimeDisplay();
 };
 
 const resetToZero = () => {
     stopTimer();
     timer = 0;
-    injuryTime = 0;
     updateTimerDisplay();
-    updateInjuryTimeDisplay();
     const timeString = "00:00";
     elements.timerText.textContent = timeString;
     setText('time_counter', timeString);
@@ -1405,48 +1398,20 @@ const renderMatchSaveButtons = (emptyMessage = 'โหลด Excel เพื่�
 
 
 const openTimeSettings = () => {
-    const minutes = Math.floor(countdownStartTime / 60);
-    const seconds = countdownStartTime % 60;
-    elements.startTimeMinutes.value = minutes;
-    elements.startTimeSeconds.value = seconds;
-    openPopup(elements.timeSettingsPopup);
+    // Function removed - Time settings no longer available
 };
 
 const validateAndGetTime = () => {
-    const trans = translations[currentLang] || translations.en;
-    const minutes = parseInt(elements.startTimeMinutes.value, 10);
-    const seconds = parseInt(elements.startTimeSeconds.value, 10);
-
-    if (isNaN(minutes) || isNaN(seconds) || minutes < 0 || seconds < 0 || seconds > 59) {
-        elements.timeSettingsError.textContent = trans.toastInvalidTime;
-        elements.timeSettingsError.style.display = 'block';
-        return null;
-    }
-    return (minutes * 60) + seconds;
+    // Function removed - Time settings no longer available
+    return null;
 }
 
 const saveTimeSettings = () => {
-    const newTime = validateAndGetTime();
-    if (newTime === null) return;
-    
-    countdownStartTime = newTime;
-    localStorage.setItem('countdownStartTime', countdownStartTime);
-    closeAllPopups();
-    showToast(translations[currentLang].toastSaved, 'success');
+    // Function removed - Time settings no longer available
 };
 
 const saveAndUpdateTime = () => {
-    const newTime = validateAndGetTime();
-    if (newTime === null) return;
-
-    countdownStartTime = newTime;
-    localStorage.setItem('countdownStartTime', countdownStartTime);
-    
-    timer = newTime;
-    updateTimerDisplay();
-
-    closeAllPopups();
-    showToast(translations[currentLang].toastTimeSet, 'success');
+    // Function removed - Time settings no longer available
 }
 
 
@@ -1456,15 +1421,25 @@ const toggleHalf = () => {
     setText('half_text', half);
 };
 
-const updateInjuryTimeDisplay = () => {
-    const displayString = injuryTime > 0 ? `+${injuryTime}` : '+0';
-    elements.injuryTimeDisplay.textContent = displayString;
-    setText('injury_time_text', displayString);
+// --- PRESET TIME FUNCTIONS ---
+const openPresetTimePopup = () => {
+    openPopup(elements.presetTimePopup);
 };
 
-const changeInjuryTime = (delta) => {
-    injuryTime = Math.max(0, injuryTime + delta);
-    updateInjuryTimeDisplay();
+const handlePresetTimeSelect = (seconds) => {
+    // Save to localStorage
+    localStorage.setItem('countdownStartTime', seconds);
+    countdownStartTime = seconds;
+    
+    // Calculate minutes for display
+    const minutes = Math.floor(seconds / 60);
+    const displayText = minutes === 0 ? '0 นาที' : `${minutes} นาที`;
+    
+    // Close popup
+    closeAllPopups();
+    
+    // Show toast notification
+    showToast(`ตั้งเวลาเริ่มต้นเป็น ${displayText} แล้ว`, 'success');
 };
 
 const encodeUrlSafeBase64 = (value) => btoa(value)
@@ -1840,6 +1815,208 @@ const exitEditMode = (team, applyChanges) => {
     okBtn.style.display = 'none';
 };
 
+// --- DATABASE MANAGEMENT ---
+const openManageDatabasePopup = () => {
+    openPopup(elements.manageDatabasePopup);
+    loadDatabaseMatches();
+};
+
+const loadDatabaseMatches = () => {
+    const selectedLeague = getSelectedQuickLeague();
+    if (!selectedLeague) {
+        showToast('กรุณาเลือก League ก่อน', 'error');
+        return;
+    }
+
+    elements.databaseLoadingStatus.style.display = 'block';
+    elements.databaseTableBody.innerHTML = '<tr><td colspan="6" style="padding: 30px; text-align: center;">กำลังโหลด...</td></tr>';
+
+    try {
+        const targetDatabase = getDatabase(getOrCreateFirebaseApp(selectedLeague));
+        const matchesRef = ref(targetDatabase, 'matches');
+
+        onValue(matchesRef, (snapshot) => {
+            const data = snapshot.val();
+            currentDatabaseMatches = [];
+
+            if (data) {
+                Object.keys(data).forEach(key => {
+                    currentDatabaseMatches.push({
+                        id: key,
+                        ...data[key]
+                    });
+                });
+            }
+
+            // Sort by date (newest first)
+            currentDatabaseMatches.sort((a, b) => {
+                const dateA = new Date(a.date || '1970-01-01');
+                const dateB = new Date(b.date || '1970-01-01');
+                return dateB - dateA;
+            });
+
+            elements.databaseLoadingStatus.style.display = 'none';
+            renderDatabaseTable();
+        }, (error) => {
+            elements.databaseLoadingStatus.style.display = 'none';
+            showToast('เกิดข้อผิดพลาด: ' + error.message, 'error');
+            elements.databaseTableBody.innerHTML = `<tr><td colspan="6" style="padding: 30px; text-align: center; color: var(--danger-color);">เกิดข้อผิดพลาด: ${error.message}</td></tr>`;
+        });
+    } catch (err) {
+        elements.databaseLoadingStatus.style.display = 'none';
+        showToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+        elements.databaseTableBody.innerHTML = `<tr><td colspan="6" style="padding: 30px; text-align: center; color: var(--danger-color);">เกิดข้อผิดพลาด: ${err.message}</td></tr>`;
+    }
+};
+
+const renderDatabaseTable = () => {
+    const searchTerm = elements.databaseSearchInput.value.toLowerCase().trim();
+    const filterDate = elements.databaseFilterDate.value;
+
+    let filteredMatches = [...currentDatabaseMatches];
+
+    // Filter by search term
+    if (searchTerm) {
+        filteredMatches = filteredMatches.filter(match => {
+            const teamA = (match.teamA || '').toLowerCase();
+            const teamB = (match.teamB || '').toLowerCase();
+            const round = (match.roundLabel || '').toLowerCase();
+            return teamA.includes(searchTerm) || teamB.includes(searchTerm) || round.includes(searchTerm);
+        });
+    }
+
+    // Filter by date
+    if (filterDate !== 'all') {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        filteredMatches = filteredMatches.filter(match => {
+            const matchDate = new Date(match.date || '1970-01-01');
+            matchDate.setHours(0, 0, 0, 0);
+
+            if (filterDate === 'today') {
+                return matchDate.getTime() === today.getTime();
+            } else if (filterDate === 'week') {
+                const weekAgo = new Date(today);
+                weekAgo.setDate(weekAgo.getDate() - 7);
+                return matchDate >= weekAgo && matchDate <= today;
+            } else if (filterDate === 'month') {
+                const monthAgo = new Date(today);
+                monthAgo.setMonth(monthAgo.getMonth() - 1);
+                return matchDate >= monthAgo && matchDate <= today;
+            }
+            return true;
+        });
+    }
+
+    if (filteredMatches.length === 0) {
+        elements.databaseTableBody.innerHTML = '<tr><td colspan="6" style="padding: 30px; text-align: center; color: var(--text-muted-color);">ไม่พบข้อมูล</td></tr>';
+        return;
+    }
+
+    elements.databaseTableBody.innerHTML = filteredMatches.map(match => {
+        const date = match.date ? new Date(match.date).toLocaleDateString('th-TH') : '-';
+        const teamA = match.teamA || '-';
+        const teamB = match.teamB || '-';
+        const scoreA = match.scoreA ?? '-';
+        const scoreB = match.scoreB ?? '-';
+        const round = match.roundLabel || '-';
+
+        return `
+            <tr style="border-bottom: 1px solid var(--border-color);">
+                <td style="padding: 10px;">${date}</td>
+                <td style="padding: 10px;">${teamA}</td>
+                <td style="padding: 10px; text-align: center; font-weight: bold; font-size: 1.1rem;">${scoreA} - ${scoreB}</td>
+                <td style="padding: 10px;">${teamB}</td>
+                <td style="padding: 10px; text-align: center;">${round}</td>
+                <td style="padding: 10px; text-align: center;">
+                    <button class="btn-primary" style="padding: 4px 8px; margin-right: 5px;" onclick="editDatabaseMatch('${match.id}')">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn-danger" style="padding: 4px 8px;" onclick="deleteDatabaseMatch('${match.id}', '${teamA}', '${teamB}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+};
+
+window.editDatabaseMatch = (matchId) => {
+    const match = currentDatabaseMatches.find(m => m.id === matchId);
+    if (!match) return;
+
+    currentEditingMatch = match;
+
+    elements.editMatchDate.value = match.date || '';
+    elements.editMatchTeamA.value = match.teamA || '';
+    elements.editMatchScoreA.value = match.scoreA ?? 0;
+    elements.editMatchTeamB.value = match.teamB || '';
+    elements.editMatchScoreB.value = match.scoreB ?? 0;
+    elements.editMatchRound.value = match.roundLabel || '';
+    elements.editMatchUrl.value = match.url || '';
+
+    openPopup(elements.editMatchPopup);
+};
+
+window.deleteDatabaseMatch = (matchId, teamA, teamB) => {
+    if (!confirm(`ต้องการลบแมตช์ ${teamA} vs ${teamB} ใช่หรือไม่?`)) return;
+
+    const selectedLeague = getSelectedQuickLeague();
+    if (!selectedLeague) return;
+
+    try {
+        const targetDatabase = getDatabase(getOrCreateFirebaseApp(selectedLeague));
+        const matchRef = ref(targetDatabase, `matches/${matchId}`);
+
+        remove(matchRef)
+            .then(() => {
+                showToast('ลบข้อมูลสำเร็จ', 'success');
+                loadDatabaseMatches();
+            })
+            .catch(err => {
+                showToast('ลบข้อมูลไม่สำเร็จ: ' + err.message, 'error');
+            });
+    } catch (err) {
+        showToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    }
+};
+
+const saveMatchEdit = () => {
+    if (!currentEditingMatch) return;
+
+    const selectedLeague = getSelectedQuickLeague();
+    if (!selectedLeague) return;
+
+    const updatedData = {
+        date: elements.editMatchDate.value,
+        teamA: elements.editMatchTeamA.value,
+        scoreA: parseInt(elements.editMatchScoreA.value, 10) || 0,
+        teamB: elements.editMatchTeamB.value,
+        scoreB: parseInt(elements.editMatchScoreB.value, 10) || 0,
+        roundLabel: elements.editMatchRound.value,
+        url: elements.editMatchUrl.value
+    };
+
+    try {
+        const targetDatabase = getDatabase(getOrCreateFirebaseApp(selectedLeague));
+        const matchRef = ref(targetDatabase, `matches/${currentEditingMatch.id}`);
+
+        update(matchRef, updatedData)
+            .then(() => {
+                showToast('บันทึกข้อมูลสำเร็จ', 'success');
+                closeAllPopups();
+                openPopup(elements.manageDatabasePopup);
+                loadDatabaseMatches();
+            })
+            .catch(err => {
+                showToast('บันทึกข้อมูลไม่สำเร็จ: ' + err.message, 'error');
+            });
+    } catch (err) {
+        showToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    }
+};
+
 const setupEventListeners = () => {
     elements.languageSelector.addEventListener('change', (e) => setLanguage(e.target.value));
     elements.excelBtn.addEventListener('click', handleExcel);
@@ -1888,10 +2065,7 @@ const setupEventListeners = () => {
     elements.halfpauseBtn.addEventListener('click', halfpause);
     elements.fullEndBtn.addEventListener('click', fulltime);
     // elements.pauseBtn.addEventListener('click', stopTimer);
-    elements.resetToStartBtn.addEventListener('click', resetToStartTime); 
-    // elements.resetToZeroBtn.addEventListener('click', resetToZero);     
-    elements.editTimeBtn.addEventListener('click', openTimeSettings);
-    elements.countdownCheck.addEventListener('change', () => { isCountdown = elements.countdownCheck.checked; });
+    // Injury Time, Reset, and Countdown buttons removed
     elements.settingsBtn.addEventListener('click', () => { elements.detailsText.value = localStorage.getItem('detailsText') || ''; openPopup(elements.detailsPopup); });
     elements.copyBtn.addEventListener('click', copyDetails);
     elements.helpBtn.addEventListener('click', () => openPopup(elements.helpPopup));
@@ -1899,6 +2073,47 @@ const setupEventListeners = () => {
     elements.changelogBtn.addEventListener('click', () => openPopup(elements.changelogPopup));
     elements.controlPanelBtn.addEventListener('click', openControlPanelPopup);
     elements.popupOverlay.addEventListener('click', closeAllPopups);
+
+    // Database Management
+    if (elements.manageDatabaseBtn) {
+        elements.manageDatabaseBtn.addEventListener('click', openManageDatabasePopup);
+    }
+    if (elements.closeDatabasePopupBtn) {
+        elements.closeDatabasePopupBtn.addEventListener('click', closeAllPopups);
+    }
+    if (elements.refreshDatabaseBtn) {
+        elements.refreshDatabaseBtn.addEventListener('click', loadDatabaseMatches);
+    }
+    if (elements.databaseSearchInput) {
+        elements.databaseSearchInput.addEventListener('input', renderDatabaseTable);
+    }
+    if (elements.databaseFilterDate) {
+        elements.databaseFilterDate.addEventListener('change', renderDatabaseTable);
+    }
+    if (elements.saveMatchEditBtn) {
+        elements.saveMatchEditBtn.addEventListener('click', saveMatchEdit);
+    }
+    if (elements.cancelMatchEditBtn) {
+        elements.cancelMatchEditBtn.addEventListener('click', () => {
+            closeAllPopups();
+            openPopup(elements.manageDatabasePopup);
+        });
+    }
+
+    // Preset Time
+    if (elements.adjustTimeBtn) {
+        elements.adjustTimeBtn.addEventListener('click', openPresetTimePopup);
+    }
+    if (elements.closePresetTimeBtn) {
+        elements.closePresetTimeBtn.addEventListener('click', closeAllPopups);
+    }
+    // Add event listeners for all preset time buttons
+    document.querySelectorAll('.preset-time-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const seconds = parseInt(e.currentTarget.getAttribute('data-seconds'), 10);
+            handlePresetTimeSelect(seconds);
+        });
+    });
 
     // Details Popup
     elements.saveDetailsBtn.addEventListener('click', () => { localStorage.setItem('detailsText', elements.detailsText.value); closeAllPopups(); showToast(translations[currentLang].toastSaved, 'success'); });
@@ -1987,10 +2202,6 @@ const setupEventListeners = () => {
         showToast(translations[currentLang]?.toastSaved || 'Saved', 'success');
     });
     
-    // Injury Time
-    elements.injuryTimePlusBtn.addEventListener('click', () => changeInjuryTime(1));
-    elements.injuryTimeMinusBtn.addEventListener('click', () => changeInjuryTime(-1));
-    
     // Logo Path Settings
     elements.logoPathBtn.addEventListener('click', () => openPopup(elements.logoPathPopup));
     elements.editLogoPathBtn.addEventListener('click', () => {
@@ -2018,10 +2229,6 @@ const setupEventListeners = () => {
 document.addEventListener('DOMContentLoaded', () => {
     // Load saved settings from localStorage
     const savedLang = localStorage.getItem('scoreboardLang') || 'th';
-    const savedTime = localStorage.getItem('countdownStartTime');
-    if (savedTime) {
-        countdownStartTime = parseInt(savedTime, 10);
-    }
     const savedPath = localStorage.getItem('logoFolderPath');
     if (savedPath) {
         logoFolderPath = savedPath;
@@ -2029,12 +2236,18 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.logoPathInput.value = logoFolderPath;
     elements.currentLogoPath.textContent = logoFolderPath;
 
+    // Load saved countdown start time
+    const savedTime = localStorage.getItem('countdownStartTime');
+    if (savedTime) {
+        countdownStartTime = parseInt(savedTime, 10);
+        console.log('Loaded preset time:', countdownStartTime, 'seconds');
+    }
+
     setupEventListeners();
     setLanguage(savedLang);
     renderMatchSaveButtons();
     resetToZero(); 
     resetScore();
-    updateInjuryTimeDisplay();
     obs.connect('ws://localhost:4455').catch(err => showToast(translations[currentLang].toastObsError, 'error'));
 });
 
