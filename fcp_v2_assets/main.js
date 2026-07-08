@@ -2,7 +2,6 @@
 
 // 1. นำเข้าข้อมูลภาษาจากไฟล์ languages.js
 import { translations } from './languages.js';
-import { getLeagueOptions } from './league-config.js';
 // 1. นำเข้าโมดูล (สำหรับ Firebase v9+)
 import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
 import { getDatabase, ref, push, onValue, remove, update } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
@@ -32,7 +31,7 @@ const elements = [
     "editMatchPopup", "editMatchDate", "editMatchTeamA", "editMatchScoreA", 
     "editMatchTeamB", "editMatchScoreB", "editMatchRound", "editMatchUrl",
     "saveMatchEditBtn", "cancelMatchEditBtn",
-    "adjustTimeBtn", "presetTimePopup", "closePresetTimeBtn"
+    "adjustTimeBtn", "presetTimePopup", "closePresetTimeBtn", "currentTimeValue"
 ].reduce((acc, id) => {
     acc[id.replace(/-(\w)/g, (m, p1) => p1.toUpperCase())] = $(id);
     return acc;
@@ -408,11 +407,24 @@ const parseFirebaseKeyValue = (row) => {
 };
 
 const makeSaveTargetId = (value, fallback) => {
-    const id = cleanExcelText(value)
+    // Create clean ASCII-only slug for URLs
+    let id = cleanExcelText(value)
         .toLowerCase()
-        .replace(/[^a-z0-9ก-๙]+/gi, '-')
+        // Remove Thai characters and special chars, keep only a-z, 0-9
+        .replace(/[^a-z0-9]+/gi, '-')
         .replace(/^-+|-+$/g, '');
-    return id || fallback;
+    
+    // If ID is empty (e.g., Thai-only name), use fallback
+    if (!id) {
+        return fallback;
+    }
+    
+    // Limit length to 50 characters for cleaner URLs
+    if (id.length > 50) {
+        id = id.substring(0, 50).replace(/-+$/, '');
+    }
+    
+    return id;
 };
 
 const makeFirebaseAppName = (target) => `ExcelLeague_${String(target.id || target.index)
@@ -420,7 +432,8 @@ const makeFirebaseAppName = (target) => `ExcelLeague_${String(target.id || targe
 
 const buildFirebaseSaveTarget = (block, index) => {
     const name = block.metadata.name || block.config.projectId || `Firebase League ${index + 1}`;
-    const id = makeSaveTargetId(block.metadata.id || block.config.projectId, `firebase-${index + 1}`);
+    // Use projectId as primary ID (always ASCII), fallback to index-based ID
+    const id = makeSaveTargetId(block.config.projectId, `league-${index + 1}`);
     return {
         id,
         index,
@@ -582,7 +595,7 @@ const parseFirebaseSaveTargetsMultilineFormat = (rows) => {
                         const missingKeys = FIREBASE_REQUIRED_CONFIG_KEYS.filter(key => !config[key]);
                         if (missingKeys.length === 0) {
                             targets.push({
-                                id: makeSaveTargetId(currentLeague, `firebase-${targets.length + 1}`),
+                                id: makeSaveTargetId(config.projectId, `league-${targets.length + 1}`),
                                 index: targets.length,
                                 name: currentLeague,
                                 firebaseConfig: config
@@ -628,7 +641,7 @@ const parseFirebaseSaveTargetsMultilineFormat = (rows) => {
             const missingKeys = FIREBASE_REQUIRED_CONFIG_KEYS.filter(key => !config[key]);
             if (missingKeys.length === 0) {
                 targets.push({
-                    id: makeSaveTargetId(currentLeague, `firebase-${targets.length + 1}`),
+                    id: makeSaveTargetId(config.projectId, `league-${targets.length + 1}`),
                     index: targets.length,
                     name: currentLeague,
                     firebaseConfig: config
@@ -689,7 +702,7 @@ const parseFirebaseSaveTargetsNewFormatNoHeader = (rows) => {
             continue;
         }
         
-        const id = makeSaveTargetId(leagueName, `firebase-${i + 1}`);
+        const id = makeSaveTargetId(config.projectId, `league-${i + 1}`);
         targets.push({
             id,
             index: i,
@@ -887,7 +900,7 @@ const parseFirebaseSaveTargetsNewFormat = (rows) => {
             continue;
         }
         
-        const id = makeSaveTargetId(leagueName, `firebase-${i}`);
+        const id = makeSaveTargetId(config.projectId, `league-${i}`);
         targets.push({
             id,
             index: i - 1,
@@ -1422,6 +1435,13 @@ const toggleHalf = () => {
 };
 
 // --- PRESET TIME FUNCTIONS ---
+const updateCurrentTimeDisplay = () => {
+    if (!elements.currentTimeValue) return;
+    const minutes = Math.floor(countdownStartTime / 60);
+    const displayText = minutes === 0 ? '0 นาที' : `${minutes} นาที`;
+    elements.currentTimeValue.textContent = displayText;
+};
+
 const openPresetTimePopup = () => {
     openPopup(elements.presetTimePopup);
 };
@@ -1430,6 +1450,9 @@ const handlePresetTimeSelect = (seconds) => {
     // Save to localStorage
     localStorage.setItem('countdownStartTime', seconds);
     countdownStartTime = seconds;
+    
+    // Update display
+    updateCurrentTimeDisplay();
     
     // Calculate minutes for display
     const minutes = Math.floor(seconds / 60);
@@ -1450,6 +1473,7 @@ const encodeUrlSafeBase64 = (value) => btoa(value)
 const encodeFirebaseConfigParam = (firebaseConfig) => encodeUrlSafeBase64(JSON.stringify(firebaseConfig));
 
 const getQuickLeagueOptions = () => {
+    // Use only Excel-based Firebase configs
     const excelOptions = matchSaveTargets.map(target => ({
         value: `excel:${target.id}`,
         id: target.id,
@@ -1458,15 +1482,7 @@ const getQuickLeagueOptions = () => {
         firebaseConfig: target.firebaseConfig
     }));
 
-    if (excelOptions.length) return excelOptions;
-
-    return getLeagueOptions().map(league => ({
-        value: league.id,
-        id: league.id,
-        name: league.name,
-        source: 'static',
-        firebaseConfig: league.firebaseConfig
-    }));
+    return excelOptions;
 };
 
 const getSelectedQuickLeague = () => {
@@ -1483,6 +1499,18 @@ const populateQuickSetup = (preferredLeagueValue = elements.quickLeague?.value) 
     if (!elements.quickLeague) return;
     const options = getQuickLeagueOptions();
     elements.quickLeague.innerHTML = '';
+    
+    if (options.length === 0) {
+        // No leagues available - show placeholder
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = '⚠️ กรุณาโหลดไฟล์ Excel ก่อน';
+        option.disabled = true;
+        elements.quickLeague.appendChild(option);
+        elements.quickLeague.value = '';
+        return;
+    }
+    
     options.forEach(league => {
         const option = document.createElement('option');
         option.value = league.value;
@@ -1501,11 +1529,17 @@ const populateQuickSetup = (preferredLeagueValue = elements.quickLeague?.value) 
 
 const buildOverlayUrl = (view = 'table', date = 'all') => {
     const selectedLeague = getSelectedQuickLeague();
+    
+    // Check if league is available
+    if (!selectedLeague) {
+        throw new Error('กรุณาโหลดไฟล์ Excel ที่มี Firebase Config ก่อน');
+    }
+    
     const url = new URL('overlay.html', window.location.href);
-    url.searchParams.set('league', selectedLeague?.id || 'var');
+    url.searchParams.set('league', selectedLeague.id);
     url.searchParams.set('view', view);
 
-    if (selectedLeague?.source === 'excel') {
+    if (selectedLeague.source === 'excel') {
         url.searchParams.set('title', selectedLeague.name);
         url.searchParams.set('fb', encodeFirebaseConfigParam(selectedLeague.firebaseConfig));
     }
@@ -1521,24 +1555,36 @@ const openControlPanelPopup = () => {
 };
 
 const copyLeagueTableUrl = () => {
-    const url = buildOverlayUrl('table', 'all');
-    navigator.clipboard.writeText(url)
-        .then(() => showToast(translations[currentLang].toastCopied || 'Copied!', 'info'))
-        .catch(() => showToast(translations[currentLang].toastCopyFailed || 'Copy failed!', 'error'));
+    try {
+        const url = buildOverlayUrl('table', 'all');
+        navigator.clipboard.writeText(url)
+            .then(() => showToast(translations[currentLang].toastCopied || 'Copied!', 'success'))
+            .catch(() => showToast(translations[currentLang].toastCopyFailed || 'Copy failed!', 'error'));
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
 };
 
 const copyAllScoresUrl = () => {
-    const url = buildOverlayUrl('results', 'all');
-    navigator.clipboard.writeText(url)
-        .then(() => showToast(translations[currentLang].toastCopied || 'Copied!', 'info'))
-        .catch(() => showToast(translations[currentLang].toastCopyFailed || 'Copy failed!', 'error'));
+    try {
+        const url = buildOverlayUrl('results', 'all');
+        navigator.clipboard.writeText(url)
+            .then(() => showToast(translations[currentLang].toastCopied || 'Copied!', 'success'))
+            .catch(() => showToast(translations[currentLang].toastCopyFailed || 'Copy failed!', 'error'));
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
 };
 
 const copyLiveTickerUrl = () => {
-    const url = buildOverlayUrl('ticker', 'today');
-    navigator.clipboard.writeText(url)
-        .then(() => showToast(translations[currentLang].toastCopied || 'Copied!', 'info'))
-        .catch(() => showToast(translations[currentLang].toastCopyFailed || 'Copy failed!', 'error'));
+    try {
+        const url = buildOverlayUrl('ticker', 'today');
+        navigator.clipboard.writeText(url)
+            .then(() => showToast(translations[currentLang].toastCopied || 'Copied!', 'success'))
+            .catch(() => showToast(translations[currentLang].toastCopyFailed || 'Copy failed!', 'error'));
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
 };
 
 const handleExcel = () => {
@@ -2242,6 +2288,9 @@ document.addEventListener('DOMContentLoaded', () => {
         countdownStartTime = parseInt(savedTime, 10);
         console.log('Loaded preset time:', countdownStartTime, 'seconds');
     }
+    
+    // Update current time display
+    updateCurrentTimeDisplay();
 
     setupEventListeners();
     setLanguage(savedLang);

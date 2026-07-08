@@ -8,7 +8,6 @@ import {
     equalTo,
     limitToLast
 } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js';
-import { getLeague } from './league-config.js';
 
 const params = new URLSearchParams(window.location.search);
 const view = params.get('view') || params.get('type') || 'table';
@@ -36,16 +35,32 @@ const parseFirebaseConfigParam = () => {
 };
 
 const customFirebaseConfig = parseFirebaseConfigParam();
-const configuredLeague = getLeague(params.get('league') || 'var');
-const league = customFirebaseConfig
-    ? {
-        id: params.get('league') || customFirebaseConfig.projectId || 'excel',
-        name: params.get('title') || customFirebaseConfig.projectId || 'Excel League',
-        logo: params.get('logo') || '',
-        background: params.get('background') || configuredLeague.background,
-        firebaseConfig: customFirebaseConfig
-    }
-    : configuredLeague;
+
+// Use only Excel-based Firebase config
+if (!customFirebaseConfig) {
+    document.body.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; 
+                    font-family: sans-serif; text-align: center; padding: 20px; color: #ef4444;">
+            <div>
+                <h1 style="font-size: 2rem; margin-bottom: 1rem;">⚠️ ไม่พบ Firebase Config</h1>
+                <p style="font-size: 1.2rem; color: #cbd5e1;">กรุณาใช้ URL ที่สร้างจาก Control Panel ใน index.html</p>
+                <p style="font-size: 0.9rem; color: #94a3b8; margin-top: 1rem;">
+                    URL ต้องมี parameter <code style="background: #1e293b; padding: 2px 6px; border-radius: 4px;">fb=...</code>
+                </p>
+            </div>
+        </div>
+    `;
+    throw new Error('Firebase config is required');
+}
+
+const league = {
+    id: params.get('league') || customFirebaseConfig.projectId || 'excel',
+    name: params.get('title') || customFirebaseConfig.projectId || 'Excel League',
+    logo: params.get('logo') || '',
+    background: params.get('background') || '',
+    firebaseConfig: customFirebaseConfig
+};
+
 const title = params.get('title') || league.name;
 const dateParam = params.get('date');
 const limit = Number.parseInt(params.get('limit') || '80', 10);
