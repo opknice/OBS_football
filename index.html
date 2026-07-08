@@ -788,6 +788,141 @@
             background: #f5f5f5;
             border-radius: 4px;
         }
+
+        /* Penalty Modal Styles */
+        #penaltyModal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+
+        #penaltyModal.show {
+            display: block;
+        }
+
+        #penaltyModalContent {
+            background-color: #1e1e1e;
+            color: white;
+            font-family: sans-serif;
+            padding: 1rem;
+            text-align: center;
+            max-width: 700px;
+            margin: 20px auto;
+            border-radius: 8px;
+            position: relative;
+        }
+
+        #penaltyModalContent .penalty-close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: var(--danger-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #penaltyModalContent .penalty-close-btn:hover {
+            background: var(--danger-hover-color);
+        }
+
+        #penaltyModalContent .penalty-row { 
+            display: flex; 
+            justify-content: space-between; 
+            margin-bottom: 1rem; 
+        }
+
+        #penaltyModalContent .penalty-team { 
+            flex: 1; 
+        }
+
+        #penaltyModalContent .penalty-dots { 
+            display: flex; 
+            justify-content: center; 
+            gap: 8px; 
+            margin: 0.5rem 0; 
+        }
+
+        #penaltyModalContent .penalty-dot { 
+            width: 20px; 
+            height: 20px; 
+            border-radius: 50%; 
+            background-color: transparent; 
+            border: 2px solid #666; 
+            opacity: 0.5; 
+        }
+
+        #penaltyModalContent .penalty-dot.goal { 
+            background-color: limegreen; 
+            opacity: 1; 
+        }
+
+        #penaltyModalContent .penalty-dot.miss { 
+            background-color: crimson; 
+            opacity: 1; 
+        }
+
+        #penaltyModalContent .penalty-score { 
+            font-size: 1.1rem; 
+            font-weight: bold; 
+            margin-top: 0.3rem; 
+        }
+
+        #penaltyModalContent .penalty-controls.vertical { 
+            display: flex; 
+            flex-direction: row; 
+            justify-content: center; 
+            gap: 40px; 
+            margin-top: 0.5rem; 
+        }
+
+        #penaltyModalContent .penalty-controls .penalty-side { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 10px; 
+        }
+
+        #penaltyModalContent button { 
+            padding: 0.4rem 0.8rem; 
+            font-size: 0.9rem; 
+            border-radius: 6px; 
+            border: none; 
+            cursor: pointer; 
+        }
+
+        #penaltyModalContent .penalty-goal-btn { 
+            background-color: #4CAF50; 
+            color: white; 
+        }
+
+        #penaltyModalContent .penalty-miss-btn { 
+            background-color: #F44336; 
+            color: white; 
+        }
+
+        #penaltyModalContent .penalty-undo-btn { 
+            background-color: #888; 
+            color: white; 
+        }
+
+        #penaltyModalContent .penalty-reset { 
+            margin-top: 1rem; 
+            background-color: darkred; 
+            color: white; 
+        }
     </style>
 </head>
 
@@ -995,7 +1130,7 @@
                     </div>
                     <div class="row">
                         <button id="linktohtml" class="btn btn-primary"
-                            onclick="(function(){var w=600,h=400,left=(screen.width-w)/2,top=(screen.height-h)/2; window.open('Penalty-Shootout.html','penalty','width='+w+',height='+h+',left='+Math.max(0,Math.round(left))+',top='+Math.max(0,Math.round(top))+',toolbar=no,menubar=no,location=no,status=no,resizable=yes,scrollbars=yes');})()">ยิงจุดโทษ<i
+                            onclick="openPenaltyModal()">ยิงจุดโทษ<i
                                 class=""></i></button>
                     </div>
                 </div>
@@ -1149,6 +1284,370 @@
         <div class="row center" style="margin-top: 20px;"><button id="closeChangelogBtn" class="btn-primary"
                 data-lang="close"></button></div>
     </div>
+
+    <!-- Penalty Shootout Modal -->
+    <div id="penaltyModal">
+        <div id="penaltyModalContent">
+            <button class="penalty-close-btn" onclick="closePenaltyModal()">×</button>
+            <h2>ยิงจุดโทษ / Penalty Shootout</h2>
+            
+            <div class="penalty-row">
+                <div class="penalty-team">
+                    <h3><span id="penaltyTeamAName">ทีม A</span></h3>
+                    <div class="penalty-dots" id="penaltyDotsA"></div>
+                    <div class="penalty-score">คะแนน: <span id="penaltyScoreA">0</span></div>
+                </div>
+                <div class="penalty-team">
+                    <h3><span id="penaltyTeamBName">ทีม B</span></h3>
+                    <div class="penalty-dots" id="penaltyDotsB"></div>
+                    <div class="penalty-score">คะแนน: <span id="penaltyScoreB">0</span></div>
+                </div>
+            </div>
+
+            <div class="penalty-controls vertical">
+                <div class="penalty-side">
+                    <button class="penalty-goal-btn" onclick="penaltyShoot('A', true)">เข้า A</button>
+                    <button class="penalty-miss-btn" onclick="penaltyShoot('A', false)">ไม่เข้า A</button>
+                    <button class="penalty-undo-btn" onclick="penaltyUndo('A')">ย้อนกลับ A</button>
+                </div>
+                <div class="penalty-side">
+                    <button class="penalty-goal-btn" onclick="penaltyShoot('B', true)">เข้า B</button>
+                    <button class="penalty-miss-btn" onclick="penaltyShoot('B', false)">ไม่เข้า B</button>
+                    <button class="penalty-undo-btn" onclick="penaltyUndo('B')">ย้อนกลับ B</button>
+                </div>
+            </div>
+
+            <button class="penalty-reset" onclick="penaltyReset()">รีเซ็ตทั้งหมด</button>
+        </div>
+    </div>
+
+    <script>
+        // Penalty Shootout Modal Logic
+        const MAX_PENALTY_SHOTS = 5;
+        let penaltyShots = { A: [[]], B: [[]] };
+        let penaltyScores = { A: 0, B: 0 };
+        let penaltyCurrentPage = 0;
+        const penaltyChannel = new BroadcastChannel("penalty_channel");
+        let penaltyObs;
+
+        const PENALTY_OBS_URL = "ws://localhost:4455";
+        const PENALTY_OBS_PASSWORD = "supersecret"; // 🔒 ตั้งตามที่ตั้งไว้ใน OBS WebSocket
+
+        // ⚙️ กำหนด Sources ที่ต้องการ Show/Hide เมื่อเปิด/ปิด Penalty Modal
+        // ⚠️ แก้ไขชื่อ Sources ให้ตรงกับใน OBS ของคุณ (ดูจาก Sources panel ใน OBS)
+        const PENALTY_SCENE_NAME = "Main Stream"; // ชื่อ Scene ที่ใช้งาน
+        const PENALTY_SHOW_SOURCES = ["Penalty"]; // Sources ที่จะ SHOW เมื่อเปิด penalty
+        
+        // ⚠️ เมื่อแสดง "Penalty" จะซ่อน Sources ทั้งหมดด้านล่างนี้
+        const PENALTY_HIDE_SOURCES = [
+            "score_up", 
+            "Group 3",
+            "Group"
+        ]; // Sources ที่จะ HIDE ทั้งหมดเมื่อเปิด penalty
+        
+        // ⚙️ เมื่อปิด Penalty Modal จะ SHOW เฉพาะ sources เหล่านี้ และ HIDE "Penalty"
+        const PENALTY_CLOSE_SHOW_SOURCES = ["Group"]; // Sources ที่จะ SHOW เมื่อปิด penalty
+
+        // --- OBS WebSocket Connection for Penalty ---
+        function connectPenaltyOBS() {
+            penaltyObs = new WebSocket(PENALTY_OBS_URL);
+
+            penaltyObs.onopen = () => {
+                console.log("🟡 Penalty: Connecting to OBS...");
+            };
+
+            // ใช้ message handler ที่รองรับการ toggle sources
+            setupPenaltyOBSMessageHandler();
+
+            penaltyObs.onerror = (err) => {
+                console.error("❌ Penalty: OBS WebSocket error:", err);
+            };
+
+            penaltyObs.onclose = () => {
+                console.log("❌ Penalty: OBS WebSocket disconnected. Attempting to reconnect in 5 seconds...");
+                setTimeout(connectPenaltyOBS, 5000);
+            };
+        }
+
+        function updatePenaltyOBSScore(team, value) {
+            if (!penaltyObs || penaltyObs.readyState !== 1) return;
+            const sourceName = team === 'A' ? "Score_A" : "Score_B";
+            penaltyObs.send(JSON.stringify({
+                op: 6,
+                d: {
+                    requestType: "SetInputSettings",
+                    requestId: `update-penalty-score-${team}`,
+                    requestData: {
+                        inputName: sourceName,
+                        inputSettings: { text: value.toString() },
+                        overlay: true
+                    }
+                }
+            }));
+        }
+
+        function togglePenaltyOBSSources(showSources, hideSources) {
+            if (!penaltyObs || penaltyObs.readyState !== 1) {
+                console.warn("⚠️ Penalty: OBS not connected, cannot toggle sources");
+                return;
+            }
+
+            console.log("🔄 Toggling sources - Show:", showSources, "Hide:", hideSources);
+
+            // SHOW Sources
+            showSources.forEach((sourceName, index) => {
+                setTimeout(() => {
+                    // ลอง GetSceneItemId จาก current scene ก่อน
+                    const request = {
+                        op: 6,
+                        d: {
+                            requestType: "GetSceneItemId",
+                            requestId: `show-${sourceName}-${Date.now()}`,
+                            requestData: {
+                                sceneName: PENALTY_SCENE_NAME,
+                                sourceName: sourceName
+                            }
+                        }
+                    };
+                    console.log("📤 Sending GetSceneItemId for SHOW:", sourceName);
+                    penaltyObs.send(JSON.stringify(request));
+                }, 100 * index);
+            });
+
+            // HIDE Sources
+            hideSources.forEach((sourceName, index) => {
+                setTimeout(() => {
+                    const request = {
+                        op: 6,
+                        d: {
+                            requestType: "GetSceneItemId",
+                            requestId: `hide-${sourceName}-${Date.now()}`,
+                            requestData: {
+                                sceneName: PENALTY_SCENE_NAME,
+                                sourceName: sourceName
+                            }
+                        }
+                    };
+                    console.log("📤 Sending GetSceneItemId for HIDE:", sourceName);
+                    penaltyObs.send(JSON.stringify(request));
+                }, 100 * (showSources.length + index));
+            });
+        }
+
+        // เพิ่ม handler สำหรับจัดการ response จาก OBS
+        let originalPenaltyOnMessage = null;
+        
+        function setupPenaltyOBSMessageHandler() {
+            penaltyObs.onmessage = async (event) => {
+                const message = JSON.parse(event.data);
+                
+                if (message.op === 0) {
+                    const authRequest = {
+                        op: 1,
+                        d: {
+                            rpcVersion: 1,
+                            authentication: PENALTY_OBS_PASSWORD ? {
+                                secret: PENALTY_OBS_PASSWORD
+                            } : undefined
+                        }
+                    };
+                    penaltyObs.send(JSON.stringify(authRequest));
+                } else if (message.op === 2) {
+                    console.log("✅ Penalty: Connected to OBS WebSocket!");
+                } else if (message.op === 7) {
+                    // Response from request
+                    const requestId = message.d?.requestId || "";
+                    const responseData = message.d?.responseData;
+                    const requestStatus = message.d?.requestStatus;
+                    
+                    console.log("📥 Received response:", { requestId, requestStatus, responseData });
+                    
+                    if (requestStatus?.result === false) {
+                        console.error("❌ Request failed:", requestStatus.comment);
+                        return;
+                    }
+                    
+                    if (requestId.includes("show-") && responseData?.sceneItemId !== undefined) {
+                        // ได้ sceneItemId แล้ว ส่งคำสั่ง enable
+                        const sceneItemId = responseData.sceneItemId;
+                        const enableRequest = {
+                            op: 6,
+                            d: {
+                                requestType: "SetSceneItemEnabled",
+                                requestId: `enable-${sceneItemId}-${Date.now()}`,
+                                requestData: {
+                                    sceneName: PENALTY_SCENE_NAME,
+                                    sceneItemId: sceneItemId,
+                                    sceneItemEnabled: true
+                                }
+                            }
+                        };
+                        penaltyObs.send(JSON.stringify(enableRequest));
+                        console.log("🟢 Sending ENABLE for source ID:", sceneItemId);
+                    } else if (requestId.includes("hide-") && responseData?.sceneItemId !== undefined) {
+                        // ได้ sceneItemId แล้ว ส่งคำสั่ง disable
+                        const sceneItemId = responseData.sceneItemId;
+                        const disableRequest = {
+                            op: 6,
+                            d: {
+                                requestType: "SetSceneItemEnabled",
+                                requestId: `disable-${sceneItemId}-${Date.now()}`,
+                                requestData: {
+                                    sceneName: PENALTY_SCENE_NAME,
+                                    sceneItemId: sceneItemId,
+                                    sceneItemEnabled: false
+                                }
+                            }
+                        };
+                        penaltyObs.send(JSON.stringify(disableRequest));
+                        console.log("🔴 Sending DISABLE for source ID:", sceneItemId);
+                    } else if (requestId.includes("enable-") || requestId.includes("disable-")) {
+                        console.log("✅ Toggle completed:", requestId);
+                    }
+                }
+            };
+        }
+
+        function openPenaltyModal() {
+            document.getElementById('penaltyModal').classList.add('show');
+            // ซิงค์ชื่อทีมจากหน้าหลัก
+            const nameA = document.getElementById('nameA')?.textContent || 'ทีม A';
+            const nameB = document.getElementById('nameB')?.textContent || 'ทีม B';
+            document.getElementById('penaltyTeamAName').textContent = nameA;
+            document.getElementById('penaltyTeamBName').textContent = nameB;
+            
+            // รีเซ็ตคะแนนเป็น 0-0 เสมอเมื่อเปิด modal
+            penaltyShots = { A: [[]], B: [[]] };
+            penaltyScores = { A: 0, B: 0 };
+            penaltyCurrentPage = 0;
+            
+            // เชื่อมต่อ OBS WebSocket เมื่อเปิด modal
+            if (!penaltyObs || penaltyObs.readyState !== 1) {
+                connectPenaltyOBS();
+                // รอให้เชื่อมต่อสำเร็จก่อน toggle sources และอัปเดตคะแนน
+                setTimeout(() => {
+                    togglePenaltyOBSSources(PENALTY_SHOW_SOURCES, PENALTY_HIDE_SOURCES);
+                    // อัปเดตคะแนนเป็น 0-0 ใน OBS
+                    updatePenaltyOBSScore('A', 0);
+                    updatePenaltyOBSScore('B', 0);
+                }, 1000);
+            } else {
+                // ถ้าเชื่อมต่ออยู่แล้ว toggle ทันที
+                togglePenaltyOBSSources(PENALTY_SHOW_SOURCES, PENALTY_HIDE_SOURCES);
+                // อัปเดตคะแนนเป็น 0-0 ใน OBS
+                updatePenaltyOBSScore('A', 0);
+                updatePenaltyOBSScore('B', 0);
+            }
+            
+            penaltyRenderAll();
+        }
+
+        function closePenaltyModal() {
+            document.getElementById('penaltyModal').classList.remove('show');
+            
+            // เมื่อปิด modal ให้ SHOW เฉพาะ "Group" และ HIDE "Penalty"
+            togglePenaltyOBSSources(PENALTY_CLOSE_SHOW_SOURCES, PENALTY_SHOW_SOURCES);
+        }
+
+        function penaltyRenderDotsUI(container, shotsToRender) {
+            container.innerHTML = "";
+            for (let i = 0; i < MAX_PENALTY_SHOTS; i++) {
+                const dot = document.createElement("div");
+                dot.className = "penalty-dot";
+                const shot = shotsToRender[i];
+                if (shot === true) dot.classList.add("goal");
+                else if (shot === false) dot.classList.add("miss");
+                container.appendChild(dot);
+            }
+        }
+
+        function penaltyGetShotsForCurrentPage(team) {
+            if (!penaltyShots[team][penaltyCurrentPage]) {
+                return Array(MAX_PENALTY_SHOTS).fill(null);
+            }
+            const pageShots = penaltyShots[team][penaltyCurrentPage];
+            const displayArray = Array(MAX_PENALTY_SHOTS).fill(null);
+            for (let i = 0; i < pageShots.length; i++) {
+                displayArray[i] = pageShots[i];
+            }
+            return displayArray;
+        }
+
+        function penaltyRenderAll() {
+            const containerA = document.getElementById("penaltyDotsA");
+            const scoreDisplayA = document.getElementById("penaltyScoreA");
+            const currentShotsA = penaltyGetShotsForCurrentPage('A');
+            penaltyRenderDotsUI(containerA, currentShotsA);
+            scoreDisplayA.textContent = penaltyScores.A;
+            updatePenaltyOBSScore('A', penaltyScores.A); // อัปเดต OBS Score_A
+
+            const containerB = document.getElementById("penaltyDotsB");
+            const scoreDisplayB = document.getElementById("penaltyScoreB");
+            const currentShotsB = penaltyGetShotsForCurrentPage('B');
+            penaltyRenderDotsUI(containerB, currentShotsB);
+            scoreDisplayB.textContent = penaltyScores.B;
+            updatePenaltyOBSScore('B', penaltyScores.B); // อัปเดต OBS Score_B
+
+            // ส่งข้อมูลไปยัง OBS Overlay ผ่าน BroadcastChannel
+            penaltyChannel.postMessage({
+                type: "update",
+                data: {
+                    shotsA: currentShotsA,
+                    shotsB: currentShotsB,
+                    settings: {
+                        dotSize: 20,
+                        dotGap: 8,
+                        teamGap: 80,
+                        layout: 'side-by-side'
+                    }
+                }
+            });
+        }
+
+        function penaltyShoot(team, isGoal) {
+            const isStartingNewPage = (penaltyShots[team][penaltyCurrentPage].length === MAX_PENALTY_SHOTS);
+
+            if (isStartingNewPage) {
+                penaltyCurrentPage++;
+                if (!penaltyShots['A'][penaltyCurrentPage]) penaltyShots['A'].push([]);
+                if (!penaltyShots['B'][penaltyCurrentPage]) penaltyShots['B'].push([]);
+            }
+
+            penaltyShots[team][penaltyCurrentPage].push(isGoal);
+            if (isGoal) penaltyScores[team]++;
+            
+            penaltyRenderAll();
+        }
+
+        function penaltyUndo(team) {
+            if (penaltyShots[team][penaltyCurrentPage].length === 0) {
+                if (penaltyCurrentPage > 0) {
+                    penaltyCurrentPage--;
+                } else {
+                    return;
+                }
+            }
+
+            const last = penaltyShots[team][penaltyCurrentPage].pop();
+            if (last === true) penaltyScores[team]--;
+            
+            penaltyRenderAll();
+        }
+
+        function penaltyReset() {
+            penaltyShots = { A: [[]], B: [[]] };
+            penaltyScores = { A: 0, B: 0 };
+            penaltyCurrentPage = 0;
+            penaltyRenderAll();
+        }
+
+        // ปิด modal เมื่อคลิกพื้นที่ด้านนอก
+        document.getElementById('penaltyModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closePenaltyModal();
+            }
+        });
+    </script>
 
     <div id="logoPathPopup" class="popup-modal">
         <h3><i class="fas fa-folder-open"></i> <span data-lang="logoPathTitle"></span></h3>
