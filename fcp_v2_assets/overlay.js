@@ -322,7 +322,7 @@ const renderTicker = (matches) => {
         ticker.appendChild(el('span', 'ticker-score', [`${scoreNumber(match.scoreA)} - ${scoreNumber(match.scoreB)}`]));
         ticker.appendChild(text(match.teamB || '-'));
         ticker.appendChild(logo(match.teamB));
-        ticker.appendChild(text('  •  '));
+        ticker.appendChild(text('                  ')); // 10 spaces before and after •
     });
 
     shell.appendChild(ticker);

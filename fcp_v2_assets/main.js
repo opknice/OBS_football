@@ -1556,8 +1556,20 @@ const openControlPanelPopup = () => {
 
 const copyLeagueTableUrl = () => {
     try {
-        const url = buildOverlayUrl('table', 'all');
-        navigator.clipboard.writeText(url)
+        const selectedLeague = getSelectedQuickLeague();
+        
+        // Check if league is available
+        if (!selectedLeague) {
+            throw new Error('กรุณาโหลดไฟล์ Excel ที่มี Firebase Config ก่อน');
+        }
+        
+        // Build URL for league-table-standalone.html
+        const url = new URL('league-table-standalone.html', window.location.href);
+        url.searchParams.set('league', selectedLeague.id);
+        url.searchParams.set('title', selectedLeague.name);
+        url.searchParams.set('fb', encodeFirebaseConfigParam(selectedLeague.firebaseConfig));
+        
+        navigator.clipboard.writeText(url.href)
             .then(() => showToast(translations[currentLang].toastCopied || 'Copied!', 'success'))
             .catch(() => showToast(translations[currentLang].toastCopyFailed || 'Copy failed!', 'error'));
     } catch (err) {
@@ -1567,8 +1579,20 @@ const copyLeagueTableUrl = () => {
 
 const copyAllScoresUrl = () => {
     try {
-        const url = buildOverlayUrl('results', 'all');
-        navigator.clipboard.writeText(url)
+        const selectedLeague = getSelectedQuickLeague();
+        
+        // Check if league is available
+        if (!selectedLeague) {
+            throw new Error('กรุณาโหลดไฟล์ Excel ที่มี Firebase Config ก่อน');
+        }
+        
+        // Build URL for all-scores-standalone.html
+        const url = new URL('all-scores-standalone.html', window.location.href);
+        url.searchParams.set('league', selectedLeague.id);
+        url.searchParams.set('title', selectedLeague.name);
+        url.searchParams.set('fb', encodeFirebaseConfigParam(selectedLeague.firebaseConfig));
+        
+        navigator.clipboard.writeText(url.href)
             .then(() => showToast(translations[currentLang].toastCopied || 'Copied!', 'success'))
             .catch(() => showToast(translations[currentLang].toastCopyFailed || 'Copy failed!', 'error'));
     } catch (err) {

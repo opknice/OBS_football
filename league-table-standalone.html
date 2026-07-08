@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>League Table - Standalone</title>
+  <style>
+    :root {
+      --bg: #0a1929;
+      --panel: rgba(15, 23, 42, 0.65);
+      --text: #ffffff;
+      --muted: #cbd5e1;
+      --line: rgba(255, 255, 255, 0.1);
+      --win: #10b981;
+      --lose: #ef4444;
+      --draw: #f8fafc;
+      --accent: #3b82f6;
+    }
+
+    * { 
+      box-sizing: border-box; 
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, "Kanit", sans-serif;
+      background: var(--bg);
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    body.with-bg {
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: cover;
+    }
+
+    .app {
+      min-height: 100vh;
+      padding: 32px;
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.6));
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      min-height: 90px;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .header img {
+      width: 80px;
+      height: 80px;
+      object-fit: contain;
+      flex: 0 0 auto;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(36px, 6vw, 72px);
+      font-weight: 800;
+      line-height: 1.2;
+      text-shadow: 0 3px 12px rgba(0, 0, 0, 0.9);
+    }
+
+    .status {
+      display: grid;
+      place-items: center;
+      min-height: 300px;
+      color: var(--muted);
+      font-size: 32px;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    table {
+      width: min(1600px, 96vw);
+      margin: 0 auto;
+      border-collapse: collapse;
+      overflow: hidden;
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      border: none;
+      box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+    }
+
+    th,
+    td {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+      text-align: center;
+      font-size: clamp(22px, 2.5vw, 38px);
+      font-weight: 700;
+    }
+
+    th {
+      color: var(--muted);
+      background: rgba(0, 0, 0, 0.5);
+      font-weight: 800;
+      letter-spacing: 1px;
+    }
+
+    tbody tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .team-cell {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .logo {
+      width: 64px;
+      height: 64px;
+      object-fit: contain;
+      flex: 0 0 auto;
+    }
+
+    .win { color: var(--win); }
+    .lose { color: var(--lose); }
+    .draw { color: var(--draw); }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="header" id="header"></header>
+    <section id="content" class="status">Loading...</section>
+  </main>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js';
+    import {
+        getDatabase,
+        ref,
+        onValue
+    } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js';
+
+    const params = new URLSearchParams(window.location.search);
+
+    const decodeUrlSafeBase64 = (value) => {
+      const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), '=');
+      return atob(padded);
+    };
+
+    const parseFirebaseConfigParam = () => {
+      const encoded = params.get('fb') || params.get('firebaseConfig');
+      if (!encoded) return null;
+
+      try {
+        return JSON.parse(decodeUrlSafeBase64(encoded));
+      } catch (err) {
+        try {
+          return JSON.parse(decodeURIComponent(encoded));
+        } catch (fallbackErr) {
+          return null;
+        }
+      }
+    };
+
+    const customFirebaseConfig = parseFirebaseConfigParam();
+
+    if (!customFirebaseConfig) {
+      document.body.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; 
+                    font-family: sans-serif; text-align: center; padding: 20px; color: #ef4444;">
+          <div>
+            <h1 style="font-size: 2rem; margin-bottom: 1rem;">⚠️ ไม่พบ Firebase Config</h1>
+            <p style="font-size: 1.2rem; color: #cbd5e1;">กรุณาใช้ URL ที่สร้างจาก Control Panel</p>
+            <p style="font-size: 0.9rem; color: #94a3b8; margin-top: 1rem;">
+              URL ต้องมี parameter <code style="background: #1e293b; padding: 2px 6px; border-radius: 4px;">fb=...</code>
+            </p>
+          </div>
+        </div>
+      `;
+      throw new Error('Firebase config is required');
+    }
+
+    const league = {
+      id: params.get('league') || customFirebaseConfig.projectId || 'excel',
+      name: params.get('title') || customFirebaseConfig.projectId || 'Excel League',
+      logo: params.get('logo') || '',
+      background: params.get('background') || '',
+      firebaseConfig: customFirebaseConfig
+    };
+
+    const title = params.get('title') || league.name;
+    const showHeader = params.get('header') !== '0';
+    const defaultLogo = params.get('defaultLogo') || 'images/logo.png';
+
+    const header = document.getElementById('header');
+    const content = document.getElementById('content');
+
+    const appName = `league-table-${String(league.id).replace(/[^A-Za-z0-9_-]/g, '_')}-${Date.now()}`;
+    const app = initializeApp(league.firebaseConfig, appName);
+    const db = getDatabase(app);
+
+    const clear = (node) => {
+      while (node.firstChild) node.removeChild(node.firstChild);
+    };
+
+    const text = (value) => document.createTextNode(value == null ? '' : String(value));
+
+    const el = (tag, className, children = []) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      children.forEach((child) => {
+        node.appendChild(typeof child === 'string' ? text(child) : child);
+      });
+      return node;
+    };
+
+    const logo = (teamName, className = 'logo') => {
+      const img = document.createElement('img');
+      img.className = className;
+      img.alt = `${teamName || 'team'} logo`;
+      img.src = `logos/${encodeURIComponent(teamName || '')}.png`;
+      img.onerror = () => {
+        img.onerror = null;
+        img.src = defaultLogo;
+      };
+      return img;
+    };
+
+    const setHeader = () => {
+      clear(header);
+      header.style.display = showHeader ? 'flex' : 'none';
+      if (!showHeader) return;
+
+      if (league.logo) {
+        const img = document.createElement('img');
+        img.src = league.logo;
+        img.alt = `${league.name} logo`;
+        header.appendChild(img);
+      }
+
+      const h1 = document.createElement('h1');
+      h1.textContent = title;
+      header.appendChild(h1);
+    };
+
+    const setBackground = () => {
+      if (!league.background) return;
+      document.body.classList.add('with-bg');
+      document.body.style.backgroundImage = `url("${league.background}")`;
+    };
+
+    const showStatus = (message) => {
+      content.className = 'status';
+      content.textContent = message;
+    };
+
+    const renderTable = (matches) => {
+      const stats = {};
+
+      matches.forEach((match) => {
+        const teamA = (match.teamA || '').trim();
+        const teamB = (match.teamB || '').trim();
+        if (!teamA || !teamB) return;
+
+        const scoreA = Number(match.scoreA);
+        const scoreB = Number(match.scoreB);
+        if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return;
+
+        stats[teamA] ||= { team: teamA, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+        stats[teamB] ||= { team: teamB, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+
+        const a = stats[teamA];
+        const b = stats[teamB];
+
+        a.P++;
+        b.P++;
+        a.GF += scoreA;
+        a.GA += scoreB;
+        b.GF += scoreB;
+        b.GA += scoreA;
+
+        if (scoreA > scoreB) {
+          a.W++;
+          a.Pts += 3;
+          b.L++;
+        } else if (scoreA < scoreB) {
+          b.W++;
+          b.Pts += 3;
+          a.L++;
+        } else {
+          a.D++;
+          b.D++;
+          a.Pts++;
+          b.Pts++;
+        }
+      });
+
+      const rows = Object.values(stats)
+        .map((row) => ({ ...row, GD: row.GF - row.GA }))
+        .sort((a, b) => b.Pts - a.Pts || b.GD - a.GD || b.GF - a.GF || a.team.localeCompare(b.team));
+
+      if (!rows.length) return showStatus('ยังไม่มีข้อมูลการแข่งขัน');
+
+      const table = el('table');
+      const thead = el('thead');
+      const headRow = el('tr');
+      ['อันดับ', 'ทีม', 'แข่ง', 'ชนะ', 'เสมอ', 'แพ้', 'ได้', 'เสีย', 'ได้-เสีย', 'คะแนน'].forEach((label) => {
+        headRow.appendChild(el('th', '', [label]));
+      });
+      thead.appendChild(headRow);
+
+      const tbody = el('tbody');
+      rows.forEach((row, index) => {
+        const tr = el('tr');
+        tr.appendChild(el('td', '', [String(index + 1)]));
+        tr.appendChild(el('td', 'team-cell', [logo(row.team), text(row.team)]));
+        ['P', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'Pts'].forEach((key) => {
+          tr.appendChild(el('td', '', [String(row[key])]));
+        });
+        tbody.appendChild(tr);
+      });
+
+      table.append(thead, tbody);
+      clear(content);
+      content.className = '';
+      content.appendChild(table);
+    };
+
+    const snapshotToMatches = (snapshot) => {
+      const matches = [];
+      snapshot.forEach((child) => {
+        matches.push({ id: child.key, ...child.val() });
+      });
+      return matches;
+    };
+
+    setHeader();
+    setBackground();
+
+    onValue(ref(db, 'matches'), (snapshot) => {
+      renderTable(snapshotToMatches(snapshot));
+    }, (error) => {
+      showStatus(`โหลดข้อมูลไม่สำเร็จ: ${error.message}`);
+    });
+  </script>
+</body>
+</html>
