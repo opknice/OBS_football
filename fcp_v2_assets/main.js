@@ -1161,7 +1161,22 @@ const updateTeamUI = (team, name, logoFile, color1, color2) => {
 
     if (logoFile) {
         const hasExt = /\.(png|jpe?g|gif|webp)$/i.test(logoFile);
-        logoEl.src = `file:///${logoFolderPath}/${logoFile}${hasExt ? '' : '.png'}`;
+        
+        // ใช้ relative path แทน file:/// protocol
+        const logoFileName = `${logoFile}${hasExt ? '' : '.png'}`;
+        logoEl.src = `logos/${encodeURIComponent(logoFileName)}`;
+        
+        // แสดงรูปเมื่อโหลดสำเร็จ
+        logoEl.onload = () => {
+            logoEl.style.display = 'block';
+            initialsEl.style.display = 'none';
+        };
+        
+        // กลับไปแสดง initials ถ้ารูปโหลดไม่สำเร็จ
+        logoEl.onerror = () => {
+            logoEl.style.display = 'none';
+            initialsEl.style.display = 'block';
+        };
     }
 
     setText(obsNameSource, name.replace(/\//g, '\n'));
@@ -1235,16 +1250,14 @@ const swapTeams = () => {
     [scoreA, scoreB] = [scoreB, scoreA];
     [currentLogoA, currentLogoB] = [currentLogoB, currentLogoA];
 
-    // โหลดสีที่เคยบันทึกไว้ ถ้ามี
-    const savedA = getTeamColors(nameB);
-    const savedB = getTeamColors(nameA);
-    const colorA1 = savedA.color1 || '#ffffff';
-    const colorA2 = savedA.color2 || '#000000';
-    const colorB1 = savedB.color1 || '#ffffff';
-    const colorB2 = savedB.color2 || '#000000';
+    // สลับค่าสีที่แสดงอยู่ในหน้าจอ
+    const currentColorA1 = elements.colorA.value;
+    const currentColorA2 = elements.colorA2.value;
+    const currentColorB1 = elements.colorB.value;
+    const currentColorB2 = elements.colorB2.value;
 
-    updateTeamUI('A', nameB, currentLogoA, colorA1, colorA2);
-    updateTeamUI('B', nameA, currentLogoB, colorB1, colorB2);
+    updateTeamUI('A', nameB, currentLogoA, currentColorB1, currentColorB2);
+    updateTeamUI('B', nameA, currentLogoB, currentColorA1, currentColorA2);
 
     elements.scoreA.textContent = scoreA;
     setText('score_team_a', scoreA);
@@ -2234,43 +2247,7 @@ const setupEventListeners = () => {
         setSourceColor('Color_Team_B_2', e.target.value);
     });
 
-    // Save Color Buttons
-    // Create save buttons if not exist
-    if (!elements.colorASaveBtn) {
-        const saveBtnA = document.createElement('button');
-        saveBtnA.textContent = 'บันทึกชุด A';
-        saveBtnA.type = 'button';
-        saveBtnA.id = 'colorA-save-btn';
-        elements.colorA.parentNode.appendChild(saveBtnA);
-        elements.colorASaveBtn = saveBtnA;
-    }
-    if (!elements.colorBSaveBtn) {
-        const saveBtnB = document.createElement('button');
-        saveBtnB.textContent = 'บันทึกชุด B';
-        saveBtnB.type = 'button';
-        saveBtnB.id = 'colorB-save-btn';
-        elements.colorB.parentNode.appendChild(saveBtnB);
-        elements.colorBSaveBtn = saveBtnB;
-    }
-
-    elements.colorASaveBtn.addEventListener('click', () => {
-        // ใช้ innerText แทน innerHTML เพื่อให้ได้ชื่อทีมที่ไม่มี tag หรือ encode
-        const teamAName = elements.nameA.innerText.trim();
-        setTeamColors(teamAName, {
-            color1: elements.colorA.value,
-            color2: elements.colorA2.value
-        });
-        showToast(translations[currentLang]?.toastSaved || 'Saved', 'success');
-    });
-
-    elements.colorBSaveBtn.addEventListener('click', () => {
-        const teamBName = elements.nameB.innerText.trim();
-        setTeamColors(teamBName, {
-            color1: elements.colorB.value,
-            color2: elements.colorB2.value
-        });
-        showToast(translations[currentLang]?.toastSaved || 'Saved', 'success');
-    });
+    // Save Color Buttons - REMOVED (auto-save on color change instead)
     
     // Logo Path Settings
     elements.logoPathBtn.addEventListener('click', () => openPopup(elements.logoPathPopup));
