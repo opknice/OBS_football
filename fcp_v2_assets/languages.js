@@ -122,7 +122,7 @@ export const translations = {
         teamA: "ทีม A",
         teamB: "ทีม B",
         edit: "แก้ไข",
-        editHint: "แก้ไขชื่อ หรือขึ้นบรรทัดใหม่ด้วยการใส่ /",
+        editHint: "คลิ๊กเพื่อเปลี่ยนทีม",
         ok: "ตกลง",
         label1: "ป้าย 1",
         label2: "ป้าย 2",
