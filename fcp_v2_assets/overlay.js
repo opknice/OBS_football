@@ -313,8 +313,6 @@ const renderTicker = (matches) => {
 
     const shell = el('section', 'ticker-shell');
     const ticker = el('div', 'ticker');
-    const duration = Number.parseInt(params.get('speed') || '42', 10);
-    ticker.style.setProperty('--ticker-duration', `${Number.isFinite(duration) ? duration : 42}s`);
 
     filtered.forEach((match) => {
         ticker.appendChild(logo(match.teamA));
@@ -329,6 +327,15 @@ const renderTicker = (matches) => {
     clear(content);
     content.className = '';
     content.appendChild(shell);
+
+    // Calculate duration based on content width for constant speed
+    // Use speed parameter as pixels per second (default: 100)
+    requestAnimationFrame(() => {
+        const pixelsPerSecond = Number.parseInt(params.get('speed') || '100', 10);
+        const contentWidth = ticker.scrollWidth;
+        const duration = contentWidth / pixelsPerSecond;
+        ticker.style.setProperty('--ticker-duration', `${duration}s`);
+    });
 };
 
 const renderStadium = (matches) => {
